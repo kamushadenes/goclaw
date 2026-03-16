@@ -52,6 +52,34 @@ func ResolveWorkspacePath(dataDir, path string) string {
 // validFileName matches alphanumeric + "-_." only.
 var validFileName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,253}[a-zA-Z0-9._]$`)
 
+// sanitizeFilePath validates a relative file path for workspace read/delete.
+// Allows subdirectory access (e.g. "generated/2026-03-16/image.png") while
+// preventing path traversal and absolute paths.
+func sanitizeFilePath(name string) (string, error) {
+	if name == "" {
+		return "", fmt.Errorf("file_name is required")
+	}
+	if len(name) > 512 {
+		return "", fmt.Errorf("file_name exceeds 512 characters")
+	}
+	if strings.Contains(name, "\x00") {
+		return "", fmt.Errorf("file_name contains null bytes")
+	}
+	if strings.Contains(name, "\\") {
+		return "", fmt.Errorf("file_name contains backslash")
+	}
+	cleaned := filepath.Clean(name)
+	if filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("file_name must be a relative path")
+	}
+	for _, part := range strings.Split(cleaned, string(filepath.Separator)) {
+		if part == ".." {
+			return "", fmt.Errorf("file_name contains path traversal")
+		}
+	}
+	return cleaned, nil
+}
+
 // sanitizeFileName validates file name: max 255 chars, no path separators,
 // no null bytes, no "..", alphanumeric + "-_." only.
 func sanitizeFileName(name string) (string, error) {

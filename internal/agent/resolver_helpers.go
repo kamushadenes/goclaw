@@ -83,6 +83,7 @@ func buildTeamMD(team *store.TeamData, members []store.TeamMemberData, selfID uu
 			sb.WriteString("Do NOT use `spawn` for team delegation — `spawn` is only for self-clone subagent work.\n\n")
 			sb.WriteString("Rules:\n")
 			sb.WriteString("- Always specify `assignee` — match member expertise from the list above\n")
+			sb.WriteString("- **Check task board first** — ALWAYS call `team_tasks(action=\"list\")` before creating tasks. The system blocks creation if you skip this step\n")
 			sb.WriteString("- Create all tasks first, then briefly tell the user what you delegated\n")
 			sb.WriteString("- Do NOT add confirmations (\"Done!\", \"Got it!\") — just state what was assigned\n")
 			sb.WriteString("- Results arrive automatically — do NOT present partial results\n")

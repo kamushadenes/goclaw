@@ -563,10 +563,6 @@ func handleTeammateMessage(
 										ActorID:   toAgent,
 									},
 								})
-								// FailTask also unblocks dependent tasks.
-								if postTurn != nil {
-									postTurn.DispatchUnblockedTasks(ctx, teamID)
-								}
 							}
 						} else {
 							result := outcome.Result.Content
@@ -591,12 +587,14 @@ func handleTeammateMessage(
 										ActorID:       toAgent,
 									},
 								})
-								// Dispatch newly-unblocked dependent tasks.
-								if postTurn != nil {
-									postTurn.DispatchUnblockedTasks(ctx, teamID)
-								}
 							}
 						}
+					}
+					// Always dispatch unblocked tasks after member turn ends,
+					// regardless of whether the task was already completed by the tool.
+					// This ensures dependent tasks start only after the member's run finishes.
+					if postTurn != nil {
+						postTurn.DispatchUnblockedTasks(ctx, teamID)
 					}
 				}
 			}
@@ -645,14 +643,25 @@ func handleTeammateMessage(
 		}
 		memberAgent := inMeta["to_agent"]
 
+		// Build task board snapshot scoped to this batch (same origin_trace_id).
+		taskBoardSnapshot := ""
+		if teamIDStr := inMeta["team_id"]; teamIDStr != "" {
+			if teamUUID, err := uuid.Parse(teamIDStr); err == nil {
+				taskBoardSnapshot = buildTaskBoardSnapshot(ctx, teamStore, teamUUID, inMeta["origin_chat_id"], inMeta["origin_trace_id"])
+			}
+		}
+
 		announceContent := fmt.Sprintf(
-			"[System Message] Team member %q completed task.\n\nResult:\n%s\n\n"+
-				"Present this result to the user. Any media files are forwarded automatically. Do NOT search for files — the result above contains all relevant information.",
+			"[System Message] Team member %q completed task.\n\nResult:\n%s",
 			memberAgent, outcome.Result.Content,
 		)
+		if taskBoardSnapshot != "" {
+			announceContent += "\n\n" + taskBoardSnapshot
+		}
+		announceContent += "\n\nPresent this result to the user. Any media files are forwarded automatically. Do NOT search for files — the result above contains all relevant information."
 		// Append team workspace path so lead can locate files without searching.
 		if ws := inMeta["team_workspace"]; ws != "" {
-			announceContent += fmt.Sprintf("\n[Team workspace: %s — use read_file with path relative to workspace root, e.g. read_file(path=\"teams/...\")]", ws)
+			announceContent += fmt.Sprintf("\n[Team workspace: %s — use workspace_read to read files, e.g. workspace_read(file_name=\"filename.md\")]", ws)
 		}
 
 		// Route to the lead's session on the original channel/chat.
@@ -698,6 +707,9 @@ func handleTeammateMessage(
 		announceCtx := tools.WithPendingTeamDispatch(ctx, announcePtd)
 		announceOutCh := sched.Schedule(announceCtx, scheduler.LaneSubagent, announceReq)
 		announceOutcome := <-announceOutCh
+
+		// Release team create lock — tasks already visible in DB, safe for other goroutines to list.
+		announcePtd.ReleaseTeamLock()
 
 		// Post-turn: dispatch pending team tasks created during announce.
 		if postTurn != nil {
@@ -844,4 +856,43 @@ func handleStopCommand(
 	})
 
 	return true
+}
+
+// buildTaskBoardSnapshot returns a formatted summary of batch task statuses
+// for inclusion in the announce message to the leader. Scoped by (teamID, chatID)
+// and filtered by origin_trace_id to show only tasks from the current batch.
+func buildTaskBoardSnapshot(ctx context.Context, teamStore store.TeamStore, teamID uuid.UUID, chatID, originTraceID string) string {
+	if teamStore == nil || originTraceID == "" {
+		return ""
+	}
+	allTasks, err := teamStore.ListTasks(ctx, teamID, "", store.TeamTaskFilterAll, "", "", chatID, 0)
+	if err != nil || len(allTasks) == 0 {
+		return ""
+	}
+
+	// Filter to current batch by origin_trace_id stored in task metadata.
+	var active, completed int
+	var activeLines []string
+	for _, t := range allTasks {
+		tid, _ := t.Metadata["origin_trace_id"].(string)
+		if tid != originTraceID {
+			continue
+		}
+		switch t.Status {
+		case store.TeamTaskStatusCompleted, store.TeamTaskStatusCancelled, store.TeamTaskStatusFailed:
+			completed++
+		default:
+			active++
+			activeLines = append(activeLines, fmt.Sprintf("  #%d %s — %s", t.TaskNumber, t.Subject, t.Status))
+		}
+	}
+	total := active + completed
+	if total == 0 {
+		return ""
+	}
+	if active == 0 {
+		return fmt.Sprintf("=== Task board (this batch) ===\nAll %d tasks completed.", total)
+	}
+	return fmt.Sprintf("=== Task board (this batch) ===\nTask progress: %d/%d completed, %d active:\n%s",
+		completed, total, active, strings.Join(activeLines, "\n"))
 }

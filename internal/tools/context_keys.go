@@ -286,8 +286,10 @@ const ctxPendingDispatch toolContextKey = "tool_pending_team_dispatch"
 // After the turn ends, the consumer drains and dispatches them.
 // Thread-safe: tools may execute in parallel goroutines.
 type PendingTeamDispatch struct {
-	mu    sync.Mutex
-	tasks map[uuid.UUID][]uuid.UUID // teamID → []taskID
+	mu       sync.Mutex
+	tasks    map[uuid.UUID][]uuid.UUID // teamID → []taskID
+	listed   bool                      // true after list called in this turn
+	teamLock *sync.Mutex               // acquired on list, released before post-turn dispatch
 }
 
 func NewPendingTeamDispatch() *PendingTeamDispatch {
@@ -308,6 +310,37 @@ func (p *PendingTeamDispatch) Drain() map[uuid.UUID][]uuid.UUID {
 	out := p.tasks
 	p.tasks = make(map[uuid.UUID][]uuid.UUID)
 	return out
+}
+
+// MarkListed records that list was called in this turn.
+func (p *PendingTeamDispatch) MarkListed() {
+	p.mu.Lock()
+	p.listed = true
+	p.mu.Unlock()
+}
+
+// HasListed reports whether list was called in this turn.
+func (p *PendingTeamDispatch) HasListed() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.listed
+}
+
+// SetTeamLock stores the acquired team create lock so it can be released post-turn.
+func (p *PendingTeamDispatch) SetTeamLock(m *sync.Mutex) {
+	p.mu.Lock()
+	p.teamLock = m
+	p.mu.Unlock()
+}
+
+// ReleaseTeamLock releases the held team create lock, if any.
+func (p *PendingTeamDispatch) ReleaseTeamLock() {
+	p.mu.Lock()
+	if p.teamLock != nil {
+		p.teamLock.Unlock()
+		p.teamLock = nil
+	}
+	p.mu.Unlock()
 }
 
 func WithPendingTeamDispatch(ctx context.Context, ptd *PendingTeamDispatch) context.Context {

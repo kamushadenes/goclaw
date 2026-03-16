@@ -111,6 +111,7 @@ func (t *WorkspaceReadTool) executeList(team *store.TeamData, channel, chatID st
 	var totalSize int64
 	for _, entry := range entries {
 		if entry.IsDir() {
+			lines = append(lines, fmt.Sprintf("- %s/ (directory)", entry.Name()))
 			continue
 		}
 		info, err := entry.Info()
@@ -144,8 +145,8 @@ func (t *WorkspaceReadTool) executeRead(args map[string]any, team *store.TeamDat
 		return ErrorResult("file_name is required for action=read")
 	}
 
-	// Sanitize to prevent path traversal.
-	name, err := sanitizeFileName(fileName)
+	// Sanitize: allow subdirectory paths but prevent traversal.
+	name, err := sanitizeFilePath(fileName)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
@@ -192,7 +193,8 @@ func (t *WorkspaceReadTool) executeDelete(args map[string]any, team *store.TeamD
 		return ErrorResult("reviewers cannot delete workspace files")
 	}
 
-	name, err := sanitizeFileName(fileName)
+	// Sanitize: allow subdirectory paths but prevent traversal.
+	name, err := sanitizeFilePath(fileName)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}

@@ -68,7 +68,7 @@ export const KanbanCard = memo(function KanbanCard({ task, isTeamV2, emojiLookup
         </div>
       </div>
 
-      <p className="line-clamp-2 text-sm font-medium leading-snug">{task.subject}</p>
+      <p className="line-clamp-2 text-xs font-medium leading-snug">{task.subject}</p>
 
       {/* Bottom row: owner + type badge + priority */}
       <div className="mt-2 flex items-center gap-1.5">

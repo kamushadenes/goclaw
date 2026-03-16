@@ -331,7 +331,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			if recovered, err := l.teamStore.RecoverStaleTasks(ctx, team.ID); err == nil && recovered > 0 {
 				slog.Info("recovered stale tasks", "team", team.ID, "count", recovered)
 			}
-			if tasks, err := l.teamStore.ListTasks(ctx, team.ID, "newest", "", req.UserID, "", ""); err == nil {
+			if tasks, err := l.teamStore.ListTasks(ctx, team.ID, "newest", "", req.UserID, "", "", 0); err == nil {
 				var stale []string
 				var inProgress []string
 				for _, t := range tasks {
@@ -608,7 +608,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			if teamTaskCreates > teamTaskSpawns && !teamTaskRetried {
 				if l.teamStore != nil && l.agentUUID != uuid.Nil {
 					if team, _ := l.teamStore.GetTeamForAgent(ctx, l.agentUUID); team != nil && tools.IsTeamV2(team) {
-						if tasks, err := l.teamStore.ListTasks(ctx, team.ID, "newest", "", req.UserID, "", ""); err == nil {
+						if tasks, err := l.teamStore.ListTasks(ctx, team.ID, "newest", "", req.UserID, "", "", 0); err == nil {
 							var pendingIDs []string
 							for _, t := range tasks {
 								if t.Status == store.TeamTaskStatusPending {

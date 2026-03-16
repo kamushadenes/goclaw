@@ -333,6 +333,9 @@ func processNormalMessage(
 	go func(agentKey, channel, chatID, session, rID string, meta map[string]string, blockReplyEnabled bool, ptd *tools.PendingTeamDispatch) {
 		outcome := <-outCh
 
+		// Release team create lock — tasks already visible in DB, other goroutines can list.
+		ptd.ReleaseTeamLock()
+
 		// Post-turn: dispatch pending team tasks created during this turn.
 		if postTurn != nil {
 			for teamID, taskIDs := range ptd.Drain() {
