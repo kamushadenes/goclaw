@@ -152,6 +152,16 @@ export const Methods = {
   TEAMS_WORKSPACE_READ: "teams.workspace.read",
   TEAMS_WORKSPACE_DELETE: "teams.workspace.delete",
 
+  // Heartbeat
+  HEARTBEAT_GET: "heartbeat.get",
+  HEARTBEAT_SET: "heartbeat.set",
+  HEARTBEAT_TOGGLE: "heartbeat.toggle",
+  HEARTBEAT_TEST: "heartbeat.test",
+  HEARTBEAT_LOGS: "heartbeat.logs",
+  HEARTBEAT_CHECKLIST_GET: "heartbeat.checklist.get",
+  HEARTBEAT_CHECKLIST_SET: "heartbeat.checklist.set",
+  HEARTBEAT_TARGETS: "heartbeat.targets",
+
   // Phase 3+ - NICE TO HAVE
   LOGS_TAIL: "logs.tail",
 } as const;
@@ -218,6 +228,8 @@ export const Events = {
   // Skill dependency install (triggered by POST /v1/skills/install-deps)
   SKILL_DEPS_INSTALLING: "skill.deps.installing",
   SKILL_DEPS_INSTALLED: "skill.deps.installed",
+
+  HEARTBEAT: "heartbeat",
 } as const;
 
 /** All event names relevant to team debug view */
