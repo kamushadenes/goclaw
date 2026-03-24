@@ -125,23 +125,23 @@ export function StoragePage() {
     refreshSize();
   }, [listFiles, refreshSize]);
 
-  /** Derive current folder path from activePath for scoped uploads. */
+  /** Derive the folder containing the currently selected file (or "" for root). */
   const activeFolder = useMemo(() => {
     if (!activePath) return "";
-    // If activePath is a folder, use it; otherwise use its parent.
-    const node = files.find((f) => f.path === activePath);
-    if (node?.isDir) return activePath;
     const idx = activePath.lastIndexOf("/");
     return idx > 0 ? activePath.slice(0, idx) : "";
-  }, [activePath, files]);
+  }, [activePath]);
+
+  // uploadFolder is captured when user clicks Upload, so it won't change mid-dialog.
+  const [uploadFolder, setUploadFolder] = useState("");
 
   const handleUploadFile = useCallback(async (file: File) => {
     const params: Record<string, string> = {};
-    if (activeFolder) params["path"] = activeFolder;
+    if (uploadFolder) params["path"] = uploadFolder;
     const fd = new FormData();
     fd.append("file", file);
     await http.upload(`/v1/storage/files?` + new URLSearchParams(params).toString(), fd);
-  }, [http, activeFolder]);
+  }, [http, uploadFolder]);
 
   const handleUploadClose = useCallback((v: boolean) => {
     setUploadOpen(v);
@@ -178,7 +178,7 @@ export function StoragePage() {
         }
         actions={
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setUploadOpen(true)}>
+            <Button variant="outline" size="sm" onClick={() => { setUploadFolder(activeFolder); setUploadOpen(true); }}>
               <Upload className="h-4 w-4 mr-1.5" />
               {t("common:uploadLabel", "Upload")}
             </Button>
@@ -211,7 +211,7 @@ export function StoragePage() {
         onOpenChange={handleUploadClose}
         onUpload={handleUploadFile}
         title={t("upload.title")}
-        description={t("upload.description")}
+        description={uploadFolder ? `${t("upload.description")} → ${uploadFolder}/` : t("upload.description")}
       />
 
       {/* Delete confirmation dialog */}
