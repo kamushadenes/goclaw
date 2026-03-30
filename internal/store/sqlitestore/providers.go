@@ -56,7 +56,11 @@ func (s *SQLiteProviderStore) CreateProvider(ctx context.Context, p *store.LLMPr
 	p.TenantID = tid
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO llm_providers (id, name, display_name, provider_type, api_base, api_key, enabled, settings, created_at, updated_at, tenant_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(tenant_id, name) DO UPDATE SET
+			display_name = excluded.display_name, provider_type = excluded.provider_type,
+			api_base = excluded.api_base, api_key = excluded.api_key,
+			enabled = excluded.enabled, settings = excluded.settings, updated_at = excluded.updated_at`,
 		p.ID, p.Name, p.DisplayName, p.ProviderType, p.APIBase, apiKey, p.Enabled, settings, now, now, tid,
 	)
 	return err
