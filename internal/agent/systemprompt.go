@@ -130,20 +130,9 @@ var coreToolSummaries = map[string]string{
 	"list_group_members":      "List all members of the current group chat (Feishu/Lark only)",
 	"create_forum_topic":      "Create a forum topic in a Telegram supergroup",
 
-	// Legacy tool aliases — kept for backward compatibility with older clients
-	"edit_file":      "Alias for edit — Edit a file by replacing exact text matches",
-	"sessions_spawn": "Alias for spawn — Spawn a self-clone subagent to handle a task in the background",
-
-	// Claude Code tool aliases — enable Claude Code skills without modification
-	"Read":       "Alias for read_file — Read file contents",
-	"Write":      "Alias for write_file — Create or overwrite files",
-	"Edit":       "Alias for edit — Edit a file by replacing exact text matches",
-	"Bash":       "Alias for exec — Run shell commands",
-	"WebFetch":   "Alias for web_fetch — Fetch and extract content from a URL",
-	"WebSearch":  "Alias for web_search — Search the web",
-	"Agent":      "Alias for spawn — Spawn a subagent or delegate to another agent",
-	"Skill":      "Alias for use_skill — Invoke a skill by name",
-	"ToolSearch": "Alias for mcp_tool_search — Search for available MCP tools",
+	// Tool aliases (edit_file, sessions_spawn, Read, Write, Edit, Bash, etc.)
+	// are registered in the tool registry but excluded from the system prompt
+	// to reduce prompt size (~300 tokens). They work without being listed here.
 }
 
 // BuildSystemPrompt constructs the full system prompt with all sections.
@@ -222,6 +211,11 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 
 	// 2. ## Tooling
 	lines = append(lines, buildToolingSection(cfg.ToolNames, cfg.SandboxEnabled, cfg.ShellDenyGroups)...)
+
+	// 2.3. ## Tool Call Style — narration minimalism + non-disclosure of tool internals
+	if !cfg.IsBootstrap {
+		lines = append(lines, buildToolCallStyleSection()...)
+	}
 
 	// 2.5. Credentialed CLI context (appended after tooling, before safety) — skip during bootstrap
 	if !cfg.IsBootstrap && cfg.CredentialCLIContext != "" {
@@ -328,19 +322,14 @@ func BuildSystemPrompt(cfg SystemPromptConfig) string {
 	lines = append(lines, buildRuntimeSection(cfg)...)
 
 	// 16. Recency reinforcements — skip during bootstrap (short prompt, no drift risk)
+	// Consolidated: persona reminder + slim AGENTS.md reminder (no memory duplication).
+	// Memory recall is covered by the dedicated ## Memory Recall section above.
 	if !cfg.IsBootstrap {
 		if len(personaFiles) > 0 {
 			lines = append(lines, buildPersonaReminder(personaFiles, cfg.AgentType, cfg.ProviderType)...)
 		}
 		if !isMinimal {
-			lines = append(lines, "Reminder: Follow AGENTS.md rules — memory recall before answering, NO_REPLY when silent, match the user's language.", "")
-		}
-		if !isMinimal && cfg.HasMemory {
-			memReminder := "Reminder: Before answering questions about prior work, decisions, or preferences, always run memory_search first. If nothing relevant is found, say you checked but found nothing."
-			if cfg.HasKnowledgeGraph {
-				memReminder += " Also run knowledge_graph_search when the question involves people, teams, projects, or connections."
-			}
-			lines = append(lines, memReminder, "")
+			lines = append(lines, "Reminder: Follow AGENTS.md rules — NO_REPLY when silent, match the user's language.", "")
 		}
 	}
 
