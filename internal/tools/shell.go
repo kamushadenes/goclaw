@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
+	shellwords "github.com/mattn/go-shellwords"
 	"github.com/nextlevelbuilder/goclaw/internal/sandbox"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"golang.org/x/text/unicode/norm"
@@ -31,30 +34,31 @@ func DefaultDenyPatterns() []*regexp.Regexp {
 
 // ExecTool executes shell commands, optionally inside a sandbox container.
 type ExecTool struct {
-	workspace       string
+	workspace        string
 	timeout          time.Duration
-	pathDenyPatterns []*regexp.Regexp     // always-on path-based denials (DenyPaths)
-	denyExemptions   []string             // substrings that exempt a command from deny
+	pathDenyPatterns []*regexp.Regexp // always-on path-based denials (DenyPaths)
+	pathDenyRoots    []string         // raw deny roots for nested workspace exemptions
+	denyExemptions   []string         // substrings that exempt a command from deny
 	restrict         bool
 	sandboxMgr       sandbox.Manager      // nil = no sandbox, execute on host
 	approvalMgr      *ExecApprovalManager // nil = no approval needed
 	agentID          string               // for approval request context
-	secureCLIStore   store.SecureCLIStore  // nil = no credentialed exec
+	secureCLIStore   store.SecureCLIStore // nil = no credentialed exec
 }
 
 // NewExecTool creates an exec tool that runs commands directly on the host.
 func NewExecTool(workspace string, restrict bool) *ExecTool {
 	return &ExecTool{
 		workspace: workspace,
-		timeout:    60 * time.Second,
-		restrict:   restrict,
+		timeout:   60 * time.Second,
+		restrict:  restrict,
 	}
 }
 
 // NewSandboxedExecTool creates an exec tool that routes commands through a sandbox container.
 func NewSandboxedExecTool(workspace string, restrict bool, mgr sandbox.Manager) *ExecTool {
 	return &ExecTool{
-		workspace: workspace,
+		workspace:  workspace,
 		timeout:    300 * time.Second, // sandbox allows longer timeout
 		restrict:   restrict,
 		sandboxMgr: mgr,
@@ -70,6 +74,7 @@ func (t *ExecTool) DenyPaths(paths ...string) {
 	for _, p := range paths {
 		escaped := regexp.QuoteMeta(p)
 		t.pathDenyPatterns = append(t.pathDenyPatterns, regexp.MustCompile(escaped))
+		t.pathDenyRoots = append(t.pathDenyRoots, p)
 	}
 }
 
@@ -94,6 +99,256 @@ func normalizeCommand(s string) string {
 		"\ufeff", "", // BOM / zero-width no-break space
 	).Replace(s)
 	return s
+}
+
+func (t *ExecTool) dynamicPathExemptions(ctx context.Context) []string {
+	var exemptions []string
+	seen := make(map[string]struct{}, 4)
+	workspace := ToolWorkspaceFromCtx(ctx)
+	teamWorkspace := ToolTeamWorkspaceFromCtx(ctx)
+
+	var dirs []string
+	if teamWorkspace != "" {
+		dirs = append(dirs, teamWorkspace)
+	}
+	if workspace != "" && filepath.Clean(workspace) != filepath.Clean(teamWorkspace) {
+		dirs = append(dirs, filepath.Join(workspace, ".uploads"))
+		dirs = append(dirs, filepath.Join(workspace, "uploads"))
+	}
+
+	for _, dir := range dirs {
+		if dir == "" || strings.Contains(dir, "..") {
+			continue
+		}
+		for _, variant := range pathAliasVariants(filepath.Clean(dir)) {
+			if !t.isNestedUnderDeniedRoot(variant) {
+				continue
+			}
+			for _, ex := range []string{variant, variant + string(filepath.Separator)} {
+				if _, ok := seen[ex]; ok {
+					continue
+				}
+				seen[ex] = struct{}{}
+				exemptions = append(exemptions, ex)
+			}
+		}
+	}
+	return exemptions
+}
+
+func pathAliasVariants(path string) []string {
+	variants := []string{path}
+	for _, mapping := range [][2]string{
+		{"/app/workspace", "/app/.goclaw"},
+		{"/app/.goclaw", "/app/workspace"},
+	} {
+		from, to := mapping[0], mapping[1]
+		if path == from {
+			variants = append(variants, to)
+			continue
+		}
+		if strings.HasPrefix(path, from+string(filepath.Separator)) {
+			variants = append(variants, to+strings.TrimPrefix(path, from))
+		}
+	}
+	return variants
+}
+
+func (t *ExecTool) isNestedUnderDeniedRoot(path string) bool {
+	for _, root := range t.pathDenyRoots {
+		cleanRoot := filepath.Clean(root)
+		if cleanRoot == "." || cleanRoot == string(filepath.Separator) {
+			continue
+		}
+		if !filepath.IsAbs(cleanRoot) {
+			marker := string(filepath.Separator) + cleanRoot + string(filepath.Separator)
+			if strings.Contains(path, marker) {
+				return true
+			}
+			continue
+		}
+		if path == cleanRoot {
+			continue
+		}
+		if strings.HasPrefix(path, cleanRoot+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesPathExemption(path string, exemptions []string) bool {
+	sep := string(filepath.Separator)
+	for _, ex := range exemptions {
+		if ex == "" {
+			continue
+		}
+		if path == ex {
+			return true
+		}
+		if strings.HasSuffix(ex, sep) {
+			if strings.HasPrefix(path, ex) {
+				return true
+			}
+			continue
+		}
+		if strings.HasPrefix(path, ex+sep) {
+			return true
+		}
+	}
+	return false
+}
+
+func parseExecCommandWords(command string) []string {
+	var words []string
+	for _, segment := range splitExecCommandSegments(command) {
+		parser := shellwords.NewParser()
+		parser.ParseBacktick = false
+		parser.ParseEnv = false
+
+		segmentWords, err := parser.Parse(segment)
+		if err != nil || len(segmentWords) == 0 {
+			words = append(words, strings.Fields(segment)...)
+			continue
+		}
+		words = append(words, segmentWords...)
+	}
+	if len(words) == 0 {
+		return strings.Fields(command)
+	}
+	return words
+}
+
+func splitExecCommandSegments(command string) []string {
+	var segments []string
+	start := 0
+	inSingle := false
+	inDouble := false
+
+	for i := 0; i < len(command); i++ {
+		ch := command[i]
+		switch {
+		case inSingle:
+			if ch == '\'' {
+				inSingle = false
+			}
+		case inDouble:
+			if ch == '\\' && i+1 < len(command) {
+				i++
+			} else if ch == '"' {
+				inDouble = false
+			}
+		default:
+			switch ch {
+			case '\\':
+				if i+1 < len(command) {
+					i++
+				}
+			case '\'':
+				inSingle = true
+			case '"':
+				inDouble = true
+			case ';', '|', '&', '<', '>', '\n', '\r':
+				if segment := strings.TrimSpace(command[start:i]); segment != "" {
+					segments = append(segments, segment)
+				}
+				start = i + 1
+			}
+		}
+	}
+
+	if tail := strings.TrimSpace(command[start:]); tail != "" {
+		segments = append(segments, tail)
+	}
+	return segments
+}
+
+func extractPathCandidates(word string) []string {
+	if word == "" {
+		return nil
+	}
+
+	queue := []string{word}
+	seen := make(map[string]struct{}, 4)
+	var out []string
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current == "" {
+			continue
+		}
+		if _, ok := seen[current]; ok {
+			continue
+		}
+		seen[current] = struct{}{}
+		if looksLikePathCandidate(current) {
+			out = append(out, current)
+		}
+		for _, sep := range []string{"=", "@"} {
+			if idx := strings.Index(current, sep); idx >= 0 && idx+1 < len(current) {
+				queue = append(queue, current[idx+1:])
+			}
+		}
+	}
+	return out
+}
+
+func looksLikePathCandidate(s string) bool {
+	if s == "" {
+		return false
+	}
+	if filepath.IsAbs(s) {
+		return true
+	}
+	return strings.HasPrefix(s, "./") ||
+		strings.HasPrefix(s, "../") ||
+		strings.HasPrefix(s, ".uploads/") ||
+		strings.HasPrefix(s, ".goclaw/") ||
+		strings.HasPrefix(s, "teams/") ||
+		strings.HasPrefix(s, "tenants/") ||
+		strings.HasPrefix(s, "~/") ||
+		strings.Contains(s, string(filepath.Separator))
+}
+
+func canonicalizeExecPath(path, baseDir string) (string, error) {
+	if strings.HasPrefix(path, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		path = filepath.Join(homeDir, strings.TrimPrefix(path, "~/"))
+	}
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(baseDir, path)
+	}
+	absPath, _ := filepath.Abs(filepath.Clean(path))
+	if real, err := filepath.EvalSymlinks(absPath); err == nil {
+		return real, nil
+	}
+	return resolveThroughExistingAncestors(absPath)
+}
+
+func matchesAnyPathExemption(word string, exemptions []string, baseDir string) bool {
+	for _, candidate := range extractPathCandidates(word) {
+		if strings.Contains(candidate, "..") {
+			continue
+		}
+		realCandidate, err := canonicalizeExecPath(candidate, baseDir)
+		if err != nil {
+			continue
+		}
+		for _, exemption := range exemptions {
+			realExemption, err := canonicalizeExecPath(exemption, baseDir)
+			if err != nil {
+				continue
+			}
+			if matchesPathExemption(realCandidate, []string{realExemption}) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // SetApprovalManager sets the exec approval manager for this tool.
@@ -155,8 +410,15 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 	allPatterns := make([]*regexp.Regexp, 0, len(groupPatterns)+len(t.pathDenyPatterns))
 	allPatterns = append(allPatterns, groupPatterns...)
 	allPatterns = append(allPatterns, t.pathDenyPatterns...)
+	exemptions := append([]string{}, t.denyExemptions...)
+	exemptions = append(exemptions, t.dynamicPathExemptions(ctx)...)
 
 	// Check for dangerous commands (applies to both host and sandbox).
+	wordFields := parseExecCommandWords(normalizedCommand)
+	pathBaseDir := ToolWorkspaceFromCtx(ctx)
+	if pathBaseDir == "" {
+		pathBaseDir = t.workspace
+	}
 	for _, pattern := range allPatterns {
 		if pattern.MatchString(normalizedCommand) {
 			// Check if exemption applies. Only exempt if EVERY field that
@@ -167,23 +429,20 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 			// path traversal ("..") to prevent exemption escape.
 			exempt := false
 			trimmed := strings.TrimSpace(normalizedCommand)
-			fields := strings.Fields(trimmed)
+			fields := wordFields
+			if len(fields) == 0 {
+				fields = strings.Fields(trimmed)
+			}
 			matchingFields := 0
 			exemptFields := 0
 			for _, field := range fields {
-				clean := strings.Trim(field, `"'`)
+				clean := strings.TrimSpace(field)
 				if !pattern.MatchString(clean) {
 					continue // field doesn't trigger this deny pattern
 				}
 				matchingFields++
-				if strings.Contains(clean, "..") {
-					continue // path traversal — never exempt
-				}
-				for _, ex := range t.denyExemptions {
-					if strings.HasPrefix(clean, ex) {
-						exemptFields++
-						break
-					}
+				if matchesAnyPathExemption(clean, exemptions, pathBaseDir) {
+					exemptFields++
 				}
 			}
 			// Exempt only if at least one field matched AND all matched fields are exempt.
