@@ -273,7 +273,19 @@
       "confirmRollback": "Revert this applied suggestion?",
       "confirmDescription": "This action will update the suggestion status.",
       "notEnabled": "Evolution not enabled",
-      "notEnabledHint": "Enable 'Evolution Metrics' in the Evolution section of the Agent tab to start recording metrics."
+      "notEnabledHint": "Enable 'Evolution Metrics' in the Evolution section of the Agent tab to start recording metrics.",
+      "colType": "Type",
+      "colSuggestion": "Suggestion",
+      "colStatus": "Status",
+      "colCreated": "Created",
+      "colActions": "Actions",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "confirming": "...",
+      "successRate": "Success Rate",
+      "usageRate": "Usage Rate",
+      "tooltipCalls": "{{count}} calls, {{ms}}ms avg",
+      "tooltipQueries": "{{count}} queries, score {{score}}"
     }
   },
   "general": {
@@ -825,6 +837,18 @@
       "vectorWeightTip": "Weight for semantic similarity in hybrid search.",
       "textWeight": "Text Weight",
       "textWeightTip": "Weight for keyword similarity in hybrid search."
+    },
+    "dreaming": {
+      "title": "Dreaming (Memory Consolidation)",
+      "description": "Background worker that promotes session summaries into long-term memory. Tune when the agent is too chatty or not consolidating often enough.",
+      "enabled": "Enabled",
+      "enabledTip": "Disable if you want the agent to rely only on raw session summaries without long-term consolidation.",
+      "threshold": "Threshold",
+      "thresholdTip": "Minimum unpromoted summaries before a consolidation run fires. Default 5.",
+      "debounceMs": "Debounce (ms)",
+      "debounceMsTip": "Minimum interval between runs per agent/user. Default 600000 (10 minutes).",
+      "verboseLog": "Verbose Logging",
+      "verboseLogTip": "Emit debounce and below-threshold skips at info level for operator debugging."
     },
     "thinking": {
       "title": "Extended Thinking",

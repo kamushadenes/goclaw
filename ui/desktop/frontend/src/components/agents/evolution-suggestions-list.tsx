@@ -14,7 +14,6 @@ const TYPE_COLORS: Record<string, string> = {
   threshold: 'bg-blue-500/10 text-blue-600',
   tool_order: 'bg-orange-500/10 text-orange-600',
   skill_add: 'bg-green-500/10 text-green-600',
-  memory_prune: 'bg-surface-tertiary text-text-muted',
 }
 
 const STATUS_COLORS: Record<string, string> = {

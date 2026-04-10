@@ -20,6 +20,18 @@ type InjectParams struct {
 	UserID      string
 	TenantID    string
 	UserMessage string
+
+	// RecentContext carries a short snippet of recent conversation (typically
+	// the last 1-2 user turns concatenated) used to enrich the search query.
+	// Context-aware recall: without this, vector search on "what's my favorite?"
+	// misses memories about the topic under discussion. With it, the query
+	// embedding captures conversational intent and returns materially better
+	// matches for follow-up questions.
+	//
+	// Empty = legacy behaviour (search on UserMessage only).
+	// Target length: ≤ ~400 chars. Longer context dilutes the embedding.
+	RecentContext string
+
 	MaxEntries  int     // default 5
 	MaxTokens   int     // default 200
 	Threshold   float64 // relevance threshold (default 0.3)

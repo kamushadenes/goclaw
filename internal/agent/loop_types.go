@@ -45,7 +45,8 @@ type EnsureUserProfileFunc func(ctx context.Context, agentID uuid.UUID, userID, 
 // Called once per user per Loop instance, independent of workspace.
 // isNew indicates whether the profile was just created (seed all) or already existed
 // (only seed if user has zero files — avoids re-seeding after BOOTSTRAP.md cleanup).
-type SeedUserFilesFunc func(ctx context.Context, agentID uuid.UUID, userID, agentType string, isNew bool) error
+// channelMeta carries optional channel-provided contact info for bootstrap skip decisions.
+type SeedUserFilesFunc func(ctx context.Context, agentID uuid.UUID, userID, agentType string, isNew bool, channelMeta *bootstrap.ChannelMeta) error
 
 // EnsureUserFilesFunc is the legacy combined callback (profile + seed + workspace).
 // Deprecated: use EnsureUserProfileFunc + SeedUserFilesFunc separately.
@@ -72,8 +73,10 @@ type Loop struct {
 	agentUUID        uuid.UUID // set for context propagation
 	tenantID         uuid.UUID // agent's owning tenant
 	agentType        string    // "open" or "predefined"
+	defaultTimezone  string    // system default timezone for bootstrap pre-fill
 	provider         providers.Provider
 	model            string
+	modelRegistry    providers.ModelRegistry // resolves per-model context window at run time (nil = use static contextWindow)
 	contextWindow    int
 	maxTokens        int // max output tokens per LLM call (0 = default 8192)
 	maxIterations    int
@@ -186,6 +189,10 @@ type Loop struct {
 	// Secure CLI store for credentialed exec context injection
 	secureCLIStore store.SecureCLIStore
 
+	// Vault hook: called when a text file is persisted from user upload.
+	// Enables vault registration without agent package importing vault.
+	onTextUploaded func(ctx context.Context, path, content string)
+
 	// Persistent media storage for cross-turn image/document access
 	mediaStore *media.Store
 
@@ -256,6 +263,10 @@ type LoopConfig struct {
 	MemoryCfg    *config.MemoryConfig
 	SandboxCfg   *sandbox.Config
 
+	// ModelRegistry resolves provider/model → ModelSpec for per-run context
+	// window lookup. Nil = fall back to static LoopConfig.ContextWindow.
+	ModelRegistry providers.ModelRegistry
+
 	Bus             bus.EventPublisher
 	DomainBus       eventbus.DomainEventBus // V3 domain event bus for consolidation pipeline
 	Sessions        store.SessionStore
@@ -299,6 +310,7 @@ type LoopConfig struct {
 	ContextFileLoader ContextFileLoaderFunc
 	BootstrapCleanup  BootstrapCleanupFunc
 	CacheInvalidate   CacheInvalidateFunc // invalidate context file cache after seeding
+	DefaultTimezone   string              // system default timezone for bootstrap pre-fill
 
 	// Tracing collector (nil = no tracing)
 	TraceCollector *tracing.Collector
@@ -338,6 +350,9 @@ type LoopConfig struct {
 
 	// Secure CLI store for credentialed exec context injection
 	SecureCLIStore store.SecureCLIStore
+
+	// Vault hook: called asynchronously when a text file is persisted from user upload.
+	OnTextUploaded func(ctx context.Context, path, content string)
 
 	// Persistent media storage for cross-turn image/document access
 	MediaStore *media.Store
@@ -409,6 +424,7 @@ func NewLoop(cfg LoopConfig) *Loop {
 		agentType:              cfg.AgentType,
 		provider:               cfg.Provider,
 		model:                  cfg.Model,
+		modelRegistry:          cfg.ModelRegistry,
 		contextWindow:          cfg.ContextWindow,
 		maxTokens:              cfg.MaxTokens,
 		maxIterations:          cfg.MaxIterations,
@@ -433,6 +449,7 @@ func NewLoop(cfg LoopConfig) *Loop {
 		skillAllowList:         cfg.SkillAllowList,
 		hasMemory:              cfg.HasMemory,
 		contextFiles:           cfg.ContextFiles,
+		defaultTimezone:        cfg.DefaultTimezone,
 		ensureUserProfile:      cfg.EnsureUserProfile,
 		seedUserFiles:          cfg.SeedUserFiles,
 		ensureUserFiles:        cfg.EnsureUserFiles,
@@ -461,6 +478,7 @@ func NewLoop(cfg LoopConfig) *Loop {
 		configPermStore:        cfg.ConfigPermStore,
 		teamStore:              cfg.TeamStore,
 		secureCLIStore:         cfg.SecureCLIStore,
+		onTextUploaded:         cfg.OnTextUploaded,
 		mediaStore:             cfg.MediaStore,
 		modelPricing:           cfg.ModelPricing,
 		budgetMonthlyCents:     cfg.BudgetMonthlyCents,

@@ -14,7 +14,6 @@ type MetricType string
 const (
 	MetricRetrieval MetricType = "retrieval"
 	MetricTool      MetricType = "tool"
-	MetricFeedback  MetricType = "feedback"
 )
 
 // EvolutionMetric is a single recorded metric data point.
@@ -58,10 +57,9 @@ type EvolutionMetricsStore interface {
 type SuggestionType string
 
 const (
-	SuggestThreshold   SuggestionType = "threshold"
-	SuggestToolOrder   SuggestionType = "tool_order"
-	SuggestSkillAdd    SuggestionType = "skill_add"
-	SuggestMemoryPrune SuggestionType = "memory_prune"
+	SuggestThreshold SuggestionType = "threshold"
+	SuggestToolOrder SuggestionType = "tool_order"
+	SuggestSkillAdd  SuggestionType = "skill_add"
 )
 
 // EvolutionSuggestion is a data-driven suggestion for agent improvement.

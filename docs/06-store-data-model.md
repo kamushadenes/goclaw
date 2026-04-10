@@ -101,6 +101,18 @@ flowchart TD
 | Cron | `agent:{agentId}:cron:{jobId}:run:{runId}` | `agent:default:cron:reminder:run:abc123` |
 | Main | `agent:{agentId}:{mainKey}` | `agent:default:main` |
 
+### Session Metadata - Compaction Tracking
+
+**New well-known metadata key** (Phase 5 follow-up): `last_compaction_at` (RFC3339 string)
+
+This timestamp is written to `sessions.metadata` JSONB after successful message compaction (context pruning). Both execution paths update it:
+- **V3 pipeline**: `PruneStage.CompactMessages()` after successful compaction
+- **V2 legacy**: `maybeSummarize()` goroutine after successful summarization
+
+Operators can read this via `GetSessionMetadata()` to understand when a session was last compacted. The web UI optionally displays this timestamp in a context-usage tooltip.
+
+Go constant export: `agent.SessionMetaKeyLastCompactionAt = "last_compaction_at"`
+
 ---
 
 ## 4. Agent Access Control
@@ -661,7 +673,7 @@ L0 (Working Memory)           L1 (Episodic Memory)        L2 (Semantic Memory)
 
 | Table | Purpose | Key Columns |
 |-------|---------|-------------|
-| `episodic_summaries` | Session conversation summaries | `agent_id`, `user_id`, `session_key`, `summary`, `l0_abstract`, `key_topics` (TEXT[]), `embedding` (vector), `source_id` (dedup), `expires_at` |
+| `episodic_summaries` | Session conversation summaries | `agent_id`, `user_id`, `session_key`, `summary`, `l0_abstract`, `key_topics` (TEXT[]), `embedding` (vector), `source_id` (dedup), `expires_at`, `recall_count` (INT), `recall_score` (FLOAT), `last_recalled_at` (TIMESTAMPTZ) |
 | `agent_evolution_metrics` | Self-evolution performance data | `agent_id`, `session_key`, `metric_type` (retrieval/tool/feedback), `metric_key`, `value` (JSONB) |
 | `agent_evolution_suggestions` | Data-driven improvement suggestions | `agent_id`, `suggestion_type`, `suggestion`, `rationale`, `parameters` (JSONB), `status` (pending/approved/rejected/applied) |
 | `vault_documents` | Knowledge Vault document registry | `agent_id`, `scope` (personal/team/shared), `path`, `title`, `doc_type`, `content_hash`, `embedding` (vector), `metadata` (JSONB) |
@@ -757,7 +769,25 @@ flowchart TD
 | **EpisodicWorker** | `run.completed` | Extract session summary via LLM or compaction summary. Generate L0 abstract. Store in `episodic_summaries`. Emit `episodic.created` |
 | **SemanticWorker** | `episodic.created` | Parse summary for entity mentions and relationships. Extract via regex/NER. Insert into KG tables (`kg_entities`, `kg_relations`). Emit `entity.upserted` |
 | **DedupWorker** | `entity.upserted` | Check for duplicate entities via embedding similarity. Merge duplicate nodes by redirecting relations. Update timestamps to reflect consolidation |
-| **DreamingWorker** | `episodic.created` (debounced 10m) | Batch collect unpromoted episodic summaries. Call LLM for synthesis/insight pass. Write results to long-term memory (update KG, write to vault, etc.) |
+| **DreamingWorker** | `episodic.created` (debounced 10m) | Batch collect unpromoted episodic summaries scored by usefulness (recall signal). Call LLM for synthesis/insight pass. Write results to long-term memory (update KG, write to vault, etc.) |
+
+### Dreaming Weighted Scoring (Phase 10, Migration 000045)
+
+The DreamingWorker prioritizes unpromoted episodic summaries by usefulness via a 4-component running-average score:
+
+**ComputeRecallScore formula** (14-day half-life):
+```
+score = 0.30 * frequency + 0.35 * relevance + 0.20 * recency + 0.15 * freshness
+```
+
+**Tracking columns** (added to `episodic_summaries`):
+- `recall_count INT DEFAULT 0` — Number of times this summary was returned in memory searches
+- `recall_score DOUBLE PRECISION DEFAULT 0` — Weighted average score (0 to 1)
+- `last_recalled_at TIMESTAMPTZ` — Timestamp of most recent search hit
+
+**Index for DreamingWorker**: `idx_episodic_recall_unpromoted` on `(agent_id, user_id, recall_score DESC) WHERE promoted_at IS NULL`. Enables efficient `ListUnpromotedScored()` queries to fetch highest-scoring summaries first.
+
+**Integration with memory_search tool**: After search results are returned to agent, a fire-and-forget task increments `recall_count`, updates `recall_score` via running average, and sets `last_recalled_at`. No blocking — search returns immediately.
 
 ### Configuration
 

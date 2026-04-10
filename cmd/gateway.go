@@ -20,6 +20,8 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/eventbus"
 	kg "github.com/nextlevelbuilder/goclaw/internal/knowledgegraph"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/discord"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/facebook"
+	"github.com/nextlevelbuilder/goclaw/internal/channels/pancake"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/feishu"
 	slackchannel "github.com/nextlevelbuilder/goclaw/internal/channels/slack"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/telegram"
@@ -179,17 +181,16 @@ func runGateway() {
 	}
 	setupMemoryEmbeddings(pgStores, providerRegistry)
 
+	// Resolve background provider for consolidation + vault enrichment.
+	// Fallback: background.provider → agent.default_provider → first registered provider.
+	bgProvider, bgModel := resolveBackgroundProvider(cfg, providerRegistry)
+
 	// V3: Wire consolidation pipeline (episodic → semantic → KG → dreaming)
 	if pgStores.Episodic != nil {
-		var consolidationProvider providers.Provider
-		if names := providerRegistry.ListForTenant(providers.MasterTenantID); len(names) > 0 {
-			consolidationProvider, _ = providerRegistry.GetForTenant(providers.MasterTenantID, names[0])
-		}
-		if consolidationProvider != nil {
-			// Create KG extractor for semantic worker (entity/relation extraction from episodic summaries)
+		if bgProvider != nil {
 			var kgExtractor *kg.Extractor
 			if pgStores.KnowledgeGraph != nil {
-				kgExtractor = kg.NewExtractor(consolidationProvider, consolidationProvider.DefaultModel(), 0)
+				kgExtractor = kg.NewExtractor(bgProvider, bgModel, 0)
 			}
 			cleanupConsolidation := consolidation.Register(consolidation.ConsolidationDeps{
 				EpisodicStore: pgStores.Episodic,
@@ -197,34 +198,31 @@ func runGateway() {
 				KGStore:       pgStores.KnowledgeGraph,
 				SessionStore:  pgStores.Sessions,
 				EventBus:      domainBus,
-				Provider:      consolidationProvider,
-				Model:         consolidationProvider.DefaultModel(),
+				Provider:      bgProvider,
+				Model:         bgModel,
 				Extractor:     kgExtractor,
+				AgentStore:    pgStores.Agents,
 			})
 			defer cleanupConsolidation()
-			slog.Info("consolidation pipeline registered")
+			slog.Info("consolidation pipeline registered", "provider", bgProvider.Name(), "model", bgModel)
 		} else {
 			slog.Warn("consolidation pipeline skipped: no provider available")
 		}
 	}
 
 	// V3: Wire vault enrichment worker (async summary + embedding + auto-linking).
-	// Resolves provider independently from consolidation pipeline.
-	if pgStores.Vault != nil {
-		var vaultProvider providers.Provider
-		if names := providerRegistry.ListForTenant(providers.MasterTenantID); len(names) > 0 {
-			vaultProvider, _ = providerRegistry.GetForTenant(providers.MasterTenantID, names[0])
-		}
-		if vaultProvider != nil {
-			cleanupVaultEnrich := vault.RegisterEnrichWorker(vault.EnrichWorkerDeps{
-				VaultStore: pgStores.Vault,
-				Provider:   vaultProvider,
-				Model:      vaultProvider.DefaultModel(),
-				EventBus:   domainBus,
-			})
-			defer cleanupVaultEnrich()
-			slog.Info("vault enrichment worker registered")
-		}
+	var enrichProgress *vault.EnrichProgress
+	if pgStores.Vault != nil && bgProvider != nil {
+		cleanupVaultEnrich, ep := vault.RegisterEnrichWorker(vault.EnrichWorkerDeps{
+			VaultStore: pgStores.Vault,
+			Provider:   bgProvider,
+			Model:      bgModel,
+			EventBus:   domainBus,
+			MsgBus:     msgBus,
+		})
+		enrichProgress = ep
+		defer cleanupVaultEnrich()
+		slog.Info("vault enrichment worker registered", "provider", bgProvider.Name(), "model", bgModel)
 	}
 
 	loadBootstrapFiles(pgStores, workspace, agentCfg)
@@ -282,7 +280,7 @@ func runGateway() {
 	var mcpPool *mcpbridge.Pool
 	var mediaStore *media.Store
 	var postTurn tools.PostTurnProcessor
-	contextFileInterceptor, mcpPool, mediaStore, postTurn = wireExtras(pgStores, agentRouter, providerRegistry, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, redisClient, domainBus)
+	contextFileInterceptor, mcpPool, mediaStore, postTurn = wireExtras(pgStores, agentRouter, providerRegistry, modelReg, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, redisClient, domainBus)
 	if mcpPool != nil {
 		defer mcpPool.Stop()
 	}
@@ -297,8 +295,10 @@ func runGateway() {
 		agentRouter:      agentRouter,
 		toolsReg:         toolsReg,
 		skillsLoader:     skillsLoader,
+		enrichProgress:   enrichProgress,
 		workspace:        workspace,
 		dataDir:          dataDir,
+		domainBus:        domainBus,
 	}
 
 	gatewayAddr := loopbackAddr(cfg.Gateway.Host, cfg.Gateway.Port)
@@ -314,7 +314,11 @@ func runGateway() {
 	// Wire dependencies for system prompt preview parity.
 	if agentsH != nil {
 		agentsH.SetPreviewDeps(toolsReg, skillsLoader)
-		agentsH.SetPreviewStores(pgStores.Teams, pgStores.AgentLinks)
+		var skillAccess store.SkillAccessStore
+		if pgStores.Skills != nil {
+			skillAccess, _ = pgStores.Skills.(store.SkillAccessStore)
+		}
+		agentsH.SetPreviewStores(pgStores.Teams, pgStores.AgentLinks, skillAccess)
 	}
 
 	// External wake/trigger API
@@ -417,6 +421,8 @@ func runGateway() {
 		instanceLoader.RegisterFactory(channels.TypeZaloPersonal, zalopersonal.FactoryWithPendingStore(pgStores.PendingMessages))
 		instanceLoader.RegisterFactory(channels.TypeWhatsApp, whatsapp.FactoryWithDB(pgStores.DB, pgStores.PendingMessages, "pgx"))
 		instanceLoader.RegisterFactory(channels.TypeSlack, slackchannel.FactoryWithPendingStore(pgStores.PendingMessages))
+		instanceLoader.RegisterFactory(channels.TypeFacebook, facebook.Factory)
+		instanceLoader.RegisterFactory(channels.TypePancake, pancake.Factory)
 		if err := instanceLoader.LoadAll(context.Background()); err != nil {
 			slog.Error("failed to load channel instances from DB", "error", err)
 		}
@@ -507,8 +513,10 @@ func runGateway() {
 		methods.NewTenantsMethods(pgStores.Tenants, msgBus, workspace).Register(server.Router())
 		server.SetTenantsHandler(httpapi.NewTenantsHandler(pgStores.Tenants, msgBus, workspace))
 		server.Router().SetTenantStore(pgStores.Tenants)
-		// Permission cache for tenant membership checks
+		// Permission cache for tenant membership checks. Store on deps so
+		// lifecycle shutdown can call Close() to stop the sweep goroutines.
 		permCache := cache.NewPermissionCache()
+		deps.permCache = permCache
 		msgBus.Subscribe("permission-cache", func(e bus.Event) {
 			if p, ok := e.Payload.(bus.CacheInvalidatePayload); ok {
 				permCache.HandleInvalidation(p)
@@ -533,4 +541,40 @@ func runGateway() {
 		auditCh:           auditCh,
 		sigCh:             sigCh,
 	})
+}
+
+// resolveBackgroundProvider picks the LLM provider+model for background workers
+// (vault enrichment, consolidation). Fallback chain:
+//
+//	background.provider/model → agent.default_provider/model → first registered provider.
+func resolveBackgroundProvider(cfg *config.Config, reg *providers.Registry) (providers.Provider, string) {
+	try := func(name, model string) (providers.Provider, string, bool) {
+		if name == "" {
+			return nil, "", false
+		}
+		p, err := reg.GetForTenant(providers.MasterTenantID, name)
+		if err != nil || p == nil {
+			return nil, "", false
+		}
+		if model == "" {
+			model = p.DefaultModel()
+		}
+		return p, model, true
+	}
+
+	// 1. Explicit background config
+	if p, m, ok := try(cfg.Gateway.BackgroundProvider, cfg.Gateway.BackgroundModel); ok {
+		return p, m
+	}
+	// 2. Agent default provider
+	if p, m, ok := try(cfg.Agents.Defaults.Provider, cfg.Agents.Defaults.Model); ok {
+		return p, m
+	}
+	// 3. First registered provider (legacy fallback)
+	if names := reg.ListForTenant(providers.MasterTenantID); len(names) > 0 {
+		if p, m, ok := try(names[0], ""); ok {
+			return p, m
+		}
+	}
+	return nil, ""
 }

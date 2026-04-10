@@ -12,22 +12,17 @@ import (
 // wireVault wires Knowledge Vault tools and interceptors into the tool registry.
 // All wiring is skipped if stores.Vault is nil.
 // Pattern mirrors wireExtras KG wiring: register tools, set stores, set interceptors.
-func wireVault(stores *store.Stores, toolsReg *tools.Registry, workspace string, bus eventbus.DomainEventBus) {
+// wireVault wires Knowledge Vault tools and interceptors into the tool registry.
+// Returns the shared VaultInterceptor for use by other subsystems (e.g. agent upload hook).
+// Returns nil if stores.Vault is nil.
+func wireVault(stores *store.Stores, toolsReg *tools.Registry, workspace string, bus eventbus.DomainEventBus) *tools.VaultInterceptor {
 	if stores.Vault == nil {
-		return
+		return nil
 	}
 
 	// Register vault tools — these are always available when vault store is present.
 	vaultSearchTool := tools.NewVaultSearchTool()
-	vaultLinkTool := tools.NewVaultLinkTool()
-	vaultBacklinksTool := tools.NewVaultBacklinksTool()
 	toolsReg.Register(vaultSearchTool)
-	toolsReg.Register(vaultLinkTool)
-	toolsReg.Register(vaultBacklinksTool)
-
-	// Wire vault store onto link/backlinks tools.
-	vaultLinkTool.SetVaultStore(stores.Vault)
-	vaultBacklinksTool.SetVaultStore(stores.Vault)
 
 	// Build VaultSearchService: fan-out across vault + KG (episodic store pending impl).
 	// EpisodicStore is nil until a PG implementation exists.
@@ -78,5 +73,6 @@ func wireVault(stores *store.Stores, toolsReg *tools.Registry, workspace string,
 		}
 	}
 
-	slog.Info("vault tools registered", "tools", "vault_search,vault_link,vault_backlinks,create_image,create_video,create_audio,tts,edit")
+	slog.Info("vault tools registered", "tools", "vault_search,create_image,create_video,create_audio,tts,edit")
+	return vaultIntc
 }

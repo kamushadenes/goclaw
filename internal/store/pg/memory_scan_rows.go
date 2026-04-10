@@ -102,34 +102,40 @@ func (r *scoredChunkRow) toScoredChunk() scoredChunk {
 // episodicSummaryRow is an sqlx scan struct for episodic_summaries SELECT queries.
 // Handles TEXT[] key_topics via pq.StringArray.
 type episodicSummaryRow struct {
-	ID         string          `db:"id"`
-	TenantID   string          `db:"tenant_id"`
-	AgentID    string          `db:"agent_id"`
-	UserID     string          `db:"user_id"`
-	SessionKey string          `db:"session_key"`
-	Summary    string          `db:"summary"`
-	KeyTopics  pq.StringArray `db:"key_topics"`
-	TurnCount  int             `db:"turn_count"`
-	TokenCount int             `db:"token_count"`
-	L0Abstract string          `db:"l0_abstract"`
-	SourceID   string          `db:"source_id"`
-	SourceType string          `db:"source_type"`
-	CreatedAt  time.Time       `db:"created_at"`
-	ExpiresAt  *time.Time      `db:"expires_at"`
+	ID             string         `db:"id"`
+	TenantID       string         `db:"tenant_id"`
+	AgentID        string         `db:"agent_id"`
+	UserID         string         `db:"user_id"`
+	SessionKey     string         `db:"session_key"`
+	Summary        string         `db:"summary"`
+	KeyTopics      pq.StringArray `db:"key_topics"`
+	TurnCount      int            `db:"turn_count"`
+	TokenCount     int            `db:"token_count"`
+	L0Abstract     string         `db:"l0_abstract"`
+	SourceID       string         `db:"source_id"`
+	SourceType     string         `db:"source_type"`
+	CreatedAt      time.Time      `db:"created_at"`
+	ExpiresAt      *time.Time     `db:"expires_at"`
+	RecallCount    int            `db:"recall_count"`
+	RecallScore    float64        `db:"recall_score"`
+	LastRecalledAt *time.Time     `db:"last_recalled_at"`
 }
 
 func (r *episodicSummaryRow) toEpisodicSummary() store.EpisodicSummary {
 	ep := store.EpisodicSummary{
-		UserID:     r.UserID,
-		SessionKey: r.SessionKey,
-		Summary:    r.Summary,
-		TurnCount:  r.TurnCount,
-		TokenCount: r.TokenCount,
-		L0Abstract: r.L0Abstract,
-		SourceID:   r.SourceID,
-		SourceType: r.SourceType,
-		CreatedAt:  r.CreatedAt,
-		ExpiresAt:  r.ExpiresAt,
+		UserID:         r.UserID,
+		SessionKey:     r.SessionKey,
+		Summary:        r.Summary,
+		TurnCount:      r.TurnCount,
+		TokenCount:     r.TokenCount,
+		L0Abstract:     r.L0Abstract,
+		SourceID:       r.SourceID,
+		SourceType:     r.SourceType,
+		CreatedAt:      r.CreatedAt,
+		ExpiresAt:      r.ExpiresAt,
+		RecallCount:    r.RecallCount,
+		RecallScore:    r.RecallScore,
+		LastRecalledAt: r.LastRecalledAt,
 	}
 	_ = ep.ID.Scan(r.ID)
 	_ = ep.TenantID.Scan(r.TenantID)

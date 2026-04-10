@@ -10,6 +10,11 @@ import (
 
 func (p *AnthropicProvider) ChatStream(ctx context.Context, req ChatRequest, onChunk func(StreamChunk)) (*ChatResponse, error) {
 	model := resolveAnthropicModel(req.Model, p.defaultModel, p.registry)
+	// stripThinking: when true, drop reasoning tokens from user-visible output.
+	// Billing counters (thinkingChars → Usage.ThinkingTokens) and tool-passback
+	// RawAssistantContent remain untouched so billing and Anthropic's thinking
+	// block replay continue to work.
+	stripThinking, _ := req.Options[OptStripThinking].(bool)
 
 	body := p.buildRequestBody(model, req, true)
 	body = ApplyMiddlewares(body, p.middlewares, p.middlewareConfig(model, req))
@@ -80,10 +85,14 @@ func (p *AnthropicProvider) ChatStream(ctx context.Context, req ChatRequest, onC
 						onChunk(StreamChunk{Content: ev.Delta.Text})
 					}
 				case "thinking_delta":
-					result.Thinking += ev.Delta.Thinking
+					// Always count raw thinking bytes for billing estimation
+					// below, even when stripping user-visible output.
 					thinkingChars += len(ev.Delta.Thinking)
-					if onChunk != nil {
-						onChunk(StreamChunk{Thinking: ev.Delta.Thinking})
+					if !stripThinking {
+						result.Thinking += ev.Delta.Thinking
+						if onChunk != nil {
+							onChunk(StreamChunk{Thinking: ev.Delta.Thinking})
+						}
 					}
 				case "input_json_delta":
 					if len(result.ToolCalls) > 0 {

@@ -167,12 +167,17 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 		if d.pgStores.Agents != nil {
 			evoOpts = append(evoOpts, httpapi.WithAgentStore(d.pgStores.Agents))
 		}
+		if d.pgStores.BuiltinToolTenantCfgs != nil {
+			evoOpts = append(evoOpts, httpapi.WithToolTenantCfgs(d.pgStores.BuiltinToolTenantCfgs))
+		}
 		d.server.SetEvolutionHandler(httpapi.NewEvolutionHandler(d.pgStores.EvolutionMetrics, d.pgStores.EvolutionSuggestions, evoOpts...))
 	}
 
 	// V3: Knowledge Vault document API
 	if d.pgStores != nil && d.pgStores.Vault != nil {
-		d.server.SetVaultHandler(httpapi.NewVaultHandler(d.pgStores.Vault, d.pgStores.Teams))
+		vh := httpapi.NewVaultHandler(d.pgStores.Vault, d.pgStores.Teams, d.workspace, d.domainBus, d.pgStores.Agents, d.pgStores.Teams)
+		vh.SetEnrichProgress(d.enrichProgress)
+		d.server.SetVaultHandler(vh)
 	}
 
 	// V3: Episodic memory summaries API

@@ -18,7 +18,7 @@ export interface RetrievalAggregate {
 export interface EvolutionSuggestion {
   id: string;
   agent_id: string;
-  suggestion_type: "threshold" | "tool_order" | "skill_add" | "memory_prune";
+  suggestion_type: "threshold" | "tool_order" | "skill_add";
   suggestion: string;
   rationale: string;
   parameters: Record<string, unknown> | null;

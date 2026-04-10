@@ -138,20 +138,29 @@ func (p *AnthropicProvider) Chat(ctx context.Context, req ChatRequest) (*ChatRes
 	body := p.buildRequestBody(model, req, false)
 	body = ApplyMiddlewares(body, p.middlewares, p.middlewareConfig(model, req))
 
-	return RetryDo(ctx, p.retryConfig, func() (*ChatResponse, error) {
+	resp, err := RetryDo(ctx, p.retryConfig, func() (*ChatResponse, error) {
 		respBody, err := p.doRequest(ctx, body)
 		if err != nil {
 			return nil, err
 		}
 		defer respBody.Close()
 
-		var resp anthropicResponse
-		if err := json.NewDecoder(respBody).Decode(&resp); err != nil {
+		var parsed anthropicResponse
+		if err := json.NewDecoder(respBody).Decode(&parsed); err != nil {
 			return nil, fmt.Errorf("anthropic: decode response: %w", err)
 		}
 
-		return p.parseResponse(&resp), nil
+		return p.parseResponse(&parsed), nil
 	})
+	// Drop user-visible reasoning after parsing for models flagged as leakers.
+	// Usage.ThinkingTokens and RawAssistantContent remain intact so billing
+	// and Anthropic tool-use thinking passback continue to work.
+	if resp != nil {
+		if strip, _ := req.Options[OptStripThinking].(bool); strip {
+			resp.Thinking = ""
+		}
+	}
+	return resp, err
 }
 
 func (p *AnthropicProvider) doRequest(ctx context.Context, body any) (io.ReadCloser, error) {

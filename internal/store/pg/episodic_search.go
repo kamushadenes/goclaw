@@ -110,27 +110,15 @@ func mergeEpisodicScores(fts, vec []episodicScored, textWeight, vecWeight float6
 	return merged
 }
 
-// scanEpisodic scans a single row into EpisodicSummary.
+// scanEpisodic scans a single row into EpisodicSummary. Column order matches
+// the SELECT list in PGEpisodicStore.Get (17 columns incl. recall signals).
 func scanEpisodic(row *sql.Row) (*store.EpisodicSummary, error) {
 	var ep store.EpisodicSummary
 	var topics pq.StringArray
 	err := row.Scan(&ep.ID, &ep.TenantID, &ep.AgentID, &ep.UserID, &ep.SessionKey,
 		&ep.Summary, &topics, &ep.TurnCount, &ep.TokenCount,
-		&ep.L0Abstract, &ep.SourceID, &ep.SourceType, &ep.CreatedAt, &ep.ExpiresAt)
-	if err != nil {
-		return nil, err
-	}
-	ep.KeyTopics = []string(topics)
-	return &ep, nil
-}
-
-// scanEpisodicRow scans from sql.Rows (same fields as scanEpisodic).
-func scanEpisodicRow(rows *sql.Rows) (*store.EpisodicSummary, error) {
-	var ep store.EpisodicSummary
-	var topics pq.StringArray
-	err := rows.Scan(&ep.ID, &ep.TenantID, &ep.AgentID, &ep.UserID, &ep.SessionKey,
-		&ep.Summary, &topics, &ep.TurnCount, &ep.TokenCount,
-		&ep.L0Abstract, &ep.SourceID, &ep.SourceType, &ep.CreatedAt, &ep.ExpiresAt)
+		&ep.L0Abstract, &ep.SourceID, &ep.SourceType, &ep.CreatedAt, &ep.ExpiresAt,
+		&ep.RecallCount, &ep.RecallScore, &ep.LastRecalledAt)
 	if err != nil {
 		return nil, err
 	}

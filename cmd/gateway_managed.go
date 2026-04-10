@@ -42,6 +42,7 @@ func wireExtras(
 	stores *store.Stores,
 	agentRouter *agent.Router,
 	providerReg *providers.Registry,
+	modelReg providers.ModelRegistry,
 	msgBus *bus.MessageBus,
 	sessStore store.SessionStore,
 	toolsReg *tools.Registry,
@@ -140,10 +141,14 @@ func wireExtras(
 		autoInjector = memorypkg.NewAutoInjector(stores.Episodic, stores.EvolutionMetrics)
 	}
 
+	// vaultIntc is set later by wireVault but captured by closure in OnTextUploaded.
+	var vaultIntc *tools.VaultInterceptor
+
 	resolver := agent.NewManagedResolver(agent.ResolverDeps{
 		AgentStore:             stores.Agents,
 		ProviderStore:          stores.Providers,
 		ProviderReg:            providerReg,
+		ModelRegistry:          modelReg,
 		Bus:                    msgBus,
 		Sessions:               sessStore,
 		Tools:                  toolsReg,
@@ -157,6 +162,7 @@ func wireExtras(
 		ContextFileLoader:      contextFileLoader,
 		BootstrapCleanup:       buildBootstrapCleanup(stores.Agents),
 		CacheInvalidate:        buildCacheInvalidate(contextFileInterceptor),
+		DefaultTimezone:        appCfg.Cron.DefaultTimezone,
 		InjectionAction:        injectionAction,
 		MaxMessageChars:        appCfg.Gateway.MaxMessageChars,
 		CompactionCfg:          appCfg.Agents.Defaults.Compaction,
@@ -184,6 +190,11 @@ func wireExtras(
 		AutoInjector:           autoInjector,
 		EvolutionMetricsStore:  stores.EvolutionMetrics,
 		DomainBus:              domainBus,
+		OnTextUploaded: func(ctx context.Context, path, content string) {
+			if vaultIntc != nil {
+				vaultIntc.AfterWrite(ctx, path, content)
+			}
+		},
 		OnEvent: func(event agent.AgentEvent) {
 			// Sign /v1/files/ and /v1/media/ URLs in content before delivery.
 			// Sessions store clean paths; signing happens only at delivery time.
@@ -339,7 +350,7 @@ func wireExtras(
 	}
 
 	// Wire vault tools and interceptors (conditional on vault store availability)
-	wireVault(stores, toolsReg, workspace, domainBus)
+	vaultIntc = wireVault(stores, toolsReg, workspace, domainBus)
 
 	// Wire delegate tool for inter-agent delegation via agent_links.
 	if stores.AgentLinks != nil && stores.Agents != nil {

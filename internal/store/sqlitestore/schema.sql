@@ -482,6 +482,7 @@ CREATE INDEX IF NOT EXISTS idx_cron_jobs_user_id ON cron_jobs(user_id);
 CREATE INDEX IF NOT EXISTS idx_cron_jobs_agent_user ON cron_jobs(agent_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_cron_jobs_team ON cron_jobs(team_id) WHERE team_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_cron_jobs_tenant ON cron_jobs(tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_cron_jobs_agent_tenant_name ON cron_jobs(agent_id, tenant_id, name);
 
 -- ============================================================
 -- Table: cron_run_logs
@@ -1414,7 +1415,12 @@ CREATE TABLE IF NOT EXISTS episodic_summaries (
     token_count INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     expires_at  TEXT,
-    promoted_at TEXT
+    promoted_at TEXT,
+    -- Phase 10: dreaming weighted scoring signals (running avg of memory_search
+    -- hit scores). See internal/consolidation/scoring.go::ComputeRecallScore.
+    recall_count     INTEGER NOT NULL DEFAULT 0,
+    recall_score     REAL    NOT NULL DEFAULT 0,
+    last_recalled_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_episodic_agent_user ON episodic_summaries(agent_id, user_id);
@@ -1422,6 +1428,8 @@ CREATE INDEX IF NOT EXISTS idx_episodic_tenant ON episodic_summaries(tenant_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_episodic_source_dedup ON episodic_summaries(agent_id, user_id, source_id)
     WHERE source_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_episodic_unpromoted ON episodic_summaries(agent_id, user_id, created_at)
+    WHERE promoted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_episodic_recall_unpromoted ON episodic_summaries(agent_id, user_id, recall_score DESC)
     WHERE promoted_at IS NULL;
 
 -- ============================================================
@@ -1509,7 +1517,7 @@ CREATE INDEX IF NOT EXISTS idx_scuc_binary ON secure_cli_user_credentials(binary
 CREATE TABLE IF NOT EXISTS vault_documents (
     id           TEXT NOT NULL PRIMARY KEY,
     tenant_id    TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
-    agent_id     TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    agent_id     TEXT REFERENCES agents(id) ON DELETE SET NULL,
     team_id      TEXT REFERENCES agent_teams(id) ON DELETE SET NULL,
     scope        TEXT NOT NULL DEFAULT 'personal',
     custom_scope TEXT,
@@ -1524,7 +1532,7 @@ CREATE TABLE IF NOT EXISTS vault_documents (
 );
 -- SQLite prohibits expressions in inline UNIQUE constraints; use a unique index instead.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_vault_docs_unique_path
-    ON vault_documents(agent_id, COALESCE(team_id, ''), scope, path);
+    ON vault_documents(tenant_id, COALESCE(agent_id, ''), COALESCE(team_id, ''), scope, path);
 CREATE INDEX IF NOT EXISTS idx_vault_docs_tenant ON vault_documents(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_vault_docs_agent_scope ON vault_documents(agent_id, scope);
 CREATE INDEX IF NOT EXISTS idx_vault_docs_type ON vault_documents(agent_id, doc_type);

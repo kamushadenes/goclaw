@@ -45,6 +45,30 @@ func NewSuggestionEngine(metrics store.EvolutionMetricsStore, suggestions store.
 	}
 }
 
+// dedupKey uniquely identifies a suggestion by type + metric key (e.g., tool name or source).
+type dedupKey struct {
+	Type store.SuggestionType
+	Key  string
+}
+
+// extractMetricKey returns the distinguishing key from suggestion parameters.
+func extractMetricKey(params json.RawMessage, st store.SuggestionType) string {
+	var p map[string]any
+	if json.Unmarshal(params, &p) != nil {
+		return ""
+	}
+	switch st {
+	case store.SuggestThreshold:
+		s, _ := p["source"].(string)
+		return s
+	case store.SuggestToolOrder, store.SuggestSkillAdd:
+		s, _ := p["tool"].(string)
+		return s
+	default:
+		return ""
+	}
+}
+
 // Analyze runs all rules against a single agent's metrics (7-day window).
 // Returns newly created suggestions. Skips rules that produce duplicates.
 func (e *SuggestionEngine) Analyze(ctx context.Context, agentID uuid.UUID) ([]store.EvolutionSuggestion, error) {
@@ -65,11 +89,12 @@ func (e *SuggestionEngine) Analyze(ctx context.Context, agentID uuid.UUID) ([]st
 		Since:         since,
 	}
 
-	// Load existing pending suggestions to avoid duplicates.
+	// Load existing pending suggestions to avoid duplicates (composite key: type + metric key).
 	existing, _ := e.suggestions.ListSuggestions(ctx, agentID, "pending", 100)
-	existingTypes := make(map[store.SuggestionType]bool, len(existing))
+	existingKeys := make(map[dedupKey]bool, len(existing))
 	for _, sg := range existing {
-		existingTypes[sg.SuggestionType] = true
+		mk := extractMetricKey(sg.Parameters, sg.SuggestionType)
+		existingKeys[dedupKey{sg.SuggestionType, mk}] = true
 	}
 
 	var created []store.EvolutionSuggestion
@@ -82,8 +107,9 @@ func (e *SuggestionEngine) Analyze(ctx context.Context, agentID uuid.UUID) ([]st
 		if sg == nil {
 			continue
 		}
-		// Skip if pending suggestion of same type already exists.
-		if existingTypes[sg.SuggestionType] {
+		// Skip if pending suggestion with same type + metric key already exists.
+		mk := extractMetricKey(sg.Parameters, sg.SuggestionType)
+		if existingKeys[dedupKey{sg.SuggestionType, mk}] {
 			continue
 		}
 
@@ -95,7 +121,7 @@ func (e *SuggestionEngine) Analyze(ctx context.Context, agentID uuid.UUID) ([]st
 			continue
 		}
 		created = append(created, *sg)
-		existingTypes[sg.SuggestionType] = true
+		existingKeys[dedupKey{sg.SuggestionType, mk}] = true
 	}
 
 	return created, nil

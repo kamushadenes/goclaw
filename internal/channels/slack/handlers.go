@@ -251,7 +251,7 @@ func (c *Channel) handleMessage(ev *slackevents.MessageEvent) {
 		"message_id":      ev.TimeStamp,
 		"user_id":         senderID,
 		"username":        displayName,
-		"display_name":    displayName,
+		"display_name":    channels.SanitizeDisplayName(displayName),
 		"channel_id":      channelID,
 		"is_dm":           fmt.Sprintf("%t", isDM),
 		"local_key":       localKey,

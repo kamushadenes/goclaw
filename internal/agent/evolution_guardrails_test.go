@@ -2,6 +2,7 @@ package agent
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -51,7 +52,7 @@ func TestCheckGuardrails(t *testing.T) {
 			dataPoints: 200,
 			params:     map[string]any{"source": "mem"},
 			sgType:     store.SuggestThreshold,
-			wantErr:    `parameter "source" is locked`,
+			wantErr:    "parameter \"source\" is locked",
 		},
 		{
 			name:       "no locked params passes",
@@ -66,6 +67,14 @@ func TestCheckGuardrails(t *testing.T) {
 			dataPoints: 50,
 			sgType:     store.SuggestThreshold,
 			wantErr:    "insufficient data",
+		},
+		{
+			name:       "threshold with usage rate passes (no broken delta check)",
+			guardrails: DefaultGuardrails(),
+			dataPoints: 200,
+			params:     map[string]any{"current_usage_rate": 0.15, "source": "vault"},
+			sgType:     store.SuggestThreshold,
+			// Previously this would fail with "delta 0.15 exceeds max 0.10" — now passes.
 		},
 	}
 
@@ -84,24 +93,10 @@ func TestCheckGuardrails(t *testing.T) {
 				t.Errorf("expected error containing %q, got nil", tt.wantErr)
 			}
 			if tt.wantErr != "" && err != nil {
-				if got := err.Error(); !contains(got, tt.wantErr) {
-					t.Errorf("error %q does not contain %q", got, tt.wantErr)
+				if !strings.Contains(err.Error(), tt.wantErr) {
+					t.Errorf("error %q does not contain %q", err.Error(), tt.wantErr)
 				}
 			}
 		})
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
-		(len(s) > 0 && len(substr) > 0 && searchStr(s, substr)))
-}
-
-func searchStr(s, sub string) bool {
-	for i := 0; i <= len(s)-len(sub); i++ {
-		if s[i:i+len(sub)] == sub {
-			return true
-		}
-	}
-	return false
 }

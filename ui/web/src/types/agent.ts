@@ -67,6 +67,20 @@ export interface MemoryConfig {
   vector_weight?: number;
   text_weight?: number;
   min_score?: number;
+  dreaming?: DreamingConfig | null;
+}
+
+/**
+ * DreamingConfig mirrors Go internal/config.DreamingConfig — per-agent
+ * overrides for the consolidation dreaming worker. Pointer fields stay
+ * undefined when the operator hasn't set them so partial overrides merge
+ * cleanly with backend defaults.
+ */
+export interface DreamingConfig {
+  enabled?: boolean;
+  debounce_ms?: number;
+  threshold?: number;
+  verbose_log?: boolean;
 }
 
 export interface WorkspaceSharingConfig {

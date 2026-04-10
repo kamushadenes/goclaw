@@ -118,6 +118,10 @@ func (p *CodexProvider) middlewareConfig(req ChatRequest) MiddlewareConfig {
 }
 
 func (p *CodexProvider) ChatStream(ctx context.Context, req ChatRequest, onChunk func(StreamChunk)) (*ChatResponse, error) {
+	// stripThinking: drop reasoning summaries from ChatResponse.Thinking and
+	// onChunk callbacks. Usage.ThinkingTokens is still populated from the
+	// final response.usage payload (Phase 1 billing accuracy).
+	stripThinking, _ := req.Options[OptStripThinking].(bool)
 	body := p.buildRequestBody(req, true)
 	body = ApplyMiddlewares(body, p.middlewares, p.middlewareConfig(req))
 
@@ -142,7 +146,7 @@ func (p *CodexProvider) ChatStream(ctx context.Context, req ChatRequest, onChunk
 			continue
 		}
 
-		p.processSSEEvent(&event, result, toolCalls, streamState, onChunk)
+		p.processSSEEvent(&event, result, toolCalls, streamState, onChunk, stripThinking)
 	}
 
 	if err := sse.Err(); err != nil {
@@ -181,7 +185,9 @@ func (p *CodexProvider) ChatStream(ctx context.Context, req ChatRequest, onChunk
 }
 
 // processSSEEvent handles a single SSE event during streaming.
-func (p *CodexProvider) processSSEEvent(event *codexSSEEvent, result *ChatResponse, toolCalls map[string]*codexToolCallAcc, streamState *codexMessageStreamState, onChunk func(StreamChunk)) {
+// stripThinking drops reasoning summaries from user-visible output while
+// leaving billing counters (Usage.ThinkingTokens) untouched.
+func (p *CodexProvider) processSSEEvent(event *codexSSEEvent, result *ChatResponse, toolCalls map[string]*codexToolCallAcc, streamState *codexMessageStreamState, onChunk func(StreamChunk), stripThinking bool) {
 	switch event.Type {
 	case "response.output_item.added":
 		if event.Item != nil {
@@ -228,11 +234,13 @@ func (p *CodexProvider) processSSEEvent(event *codexSSEEvent, result *ChatRespon
 				}
 				toolCalls[event.Item.ID] = acc
 			case "reasoning":
-				for _, s := range event.Item.Summary {
-					if s.Text != "" {
-						result.Thinking += s.Text
-						if onChunk != nil {
-							onChunk(StreamChunk{Thinking: s.Text})
+				if !stripThinking {
+					for _, s := range event.Item.Summary {
+						if s.Text != "" {
+							result.Thinking += s.Text
+							if onChunk != nil {
+								onChunk(StreamChunk{Thinking: s.Text})
+							}
 						}
 					}
 				}

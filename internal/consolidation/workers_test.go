@@ -15,16 +15,25 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
+// recallCall is a single RecordRecall invocation captured by the mock store
+// so tests can assert the (id, score) stream forwarded by memory_search.
+type recallCall struct {
+	ID    string
+	Score float64
+}
+
 // mockEpisodicStore implements store.EpisodicStore for testing.
 type mockEpisodicStore struct {
-	created       []*store.EpisodicSummary
-	existsByID    map[string]bool
-	unpromoted    []store.EpisodicSummary
-	promoted      map[string]bool
-	countResult   int
-	pruneErr      error
-	pruneCount    int
-	mu            sync.Mutex
+	created     []*store.EpisodicSummary
+	existsByID  map[string]bool
+	unpromoted  []store.EpisodicSummary
+	promoted    map[string]bool
+	countResult int
+	countCalls  int // set by CountUnpromoted — used by disabled-skip tests
+	recallCalls []recallCall
+	pruneErr    error
+	pruneCount  int
+	mu          sync.Mutex
 }
 
 func (m *mockEpisodicStore) Create(_ context.Context, ep *store.EpisodicSummary) error {
@@ -68,6 +77,7 @@ func (m *mockEpisodicStore) PruneExpired(_ context.Context) (int, error) {
 func (m *mockEpisodicStore) CountUnpromoted(_ context.Context, _, _ string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.countCalls++
 	return m.countResult, nil
 }
 
@@ -75,6 +85,23 @@ func (m *mockEpisodicStore) ListUnpromoted(_ context.Context, _, _ string, _ int
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.unpromoted, nil
+}
+
+// ListUnpromotedScored returns the same fixture as ListUnpromoted; tests that
+// need to verify sort order override the method directly on a dedicated mock.
+func (m *mockEpisodicStore) ListUnpromotedScored(_ context.Context, _, _ string, _ int) ([]store.EpisodicSummary, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.unpromoted, nil
+}
+
+// RecordRecall appends the call into the recallCalls slice so tests can
+// assert which episodic IDs received which score.
+func (m *mockEpisodicStore) RecordRecall(_ context.Context, id string, score float64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.recallCalls = append(m.recallCalls, recallCall{ID: id, Score: score})
+	return nil
 }
 
 func (m *mockEpisodicStore) MarkPromoted(_ context.Context, ids []string) error {

@@ -14,6 +14,10 @@ const (
 	OptReasoningEffort = "reasoning_effort"
 	OptEnableThinking  = "enable_thinking"
 	OptThinkingBudget  = "thinking_budget"
+	// OptStripThinking (bool) tells stream handlers to drop reasoning tokens
+	// from ChatResponse.Thinking and onChunk callbacks. Usage.ThinkingTokens
+	// and RawAssistantContent are preserved (billing + tool passback safety).
+	OptStripThinking = "strip_thinking"
 
 	// Middleware-related options (Phase 2 will use these)
 	OptServiceTier          = "service_tier"

@@ -14,7 +14,6 @@ const TYPE_COLORS: Record<string, string> = {
   threshold: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
   tool_order: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
   skill_add: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
-  memory_prune: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -62,11 +61,11 @@ export function EvolutionSuggestionsTable({ suggestions, loading, onUpdateStatus
           <table className="w-full text-sm min-w-[600px]">
             <thead>
               <tr className="border-b bg-muted/50 text-left">
-                <th className="px-3 py-2 font-medium">Type</th>
-                <th className="px-3 py-2 font-medium">Suggestion</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Created</th>
-                <th className="px-3 py-2 font-medium text-right">Actions</th>
+                <th className="px-3 py-2 font-medium">{t("detail.evolution.colType")}</th>
+                <th className="px-3 py-2 font-medium">{t("detail.evolution.colSuggestion")}</th>
+                <th className="px-3 py-2 font-medium">{t("detail.evolution.colStatus")}</th>
+                <th className="px-3 py-2 font-medium">{t("detail.evolution.colCreated")}</th>
+                <th className="px-3 py-2 font-medium text-right">{t("detail.evolution.colActions")}</th>
               </tr>
             </thead>
             <tbody>
@@ -145,10 +144,10 @@ export function EvolutionSuggestionsTable({ suggestions, loading, onUpdateStatus
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirm(null)} disabled={acting}>
-              Cancel
+              {t("detail.evolution.cancel")}
             </Button>
             <Button onClick={handleConfirm} disabled={acting}>
-              {acting ? "..." : "Confirm"}
+              {acting ? t("detail.evolution.confirming") : t("detail.evolution.confirm")}
             </Button>
           </DialogFooter>
         </DialogContent>

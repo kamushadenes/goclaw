@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
-	"math"
 	"slices"
 
 	"github.com/google/uuid"
@@ -55,22 +54,8 @@ func CheckGuardrails(g AdaptationGuardrails, sg store.EvolutionSuggestion, dataP
 		}
 	}
 
-	// Check delta constraint for threshold-type suggestions.
-	if sg.SuggestionType == store.SuggestThreshold {
-		maxDelta := g.MaxDeltaPerCycle
-		if maxDelta <= 0 {
-			maxDelta = 0.1
-		}
-		var params map[string]any
-		if err := json.Unmarshal(sg.Parameters, &params); err == nil {
-			if currentRate, ok := params["current_usage_rate"].(float64); ok {
-				// Proposed change is bounded by max delta.
-				if math.Abs(currentRate) > maxDelta {
-					return fmt.Errorf("delta %.2f exceeds max %.2f per cycle", currentRate, maxDelta)
-				}
-			}
-		}
-	}
+	// Threshold suggestions: the applied delta is capped at MaxDeltaPerCycle in ApplySuggestion,
+	// so no additional delta check is needed here. MinDataPoints and LockedParams already guard safety.
 
 	return nil
 }
@@ -78,7 +63,7 @@ func CheckGuardrails(g AdaptationGuardrails, sg store.EvolutionSuggestion, dataP
 // ApplySuggestion applies an approved suggestion's parameters to the agent's other_config JSONB.
 // Stores the previous values in the suggestion's parameters for rollback.
 // Scope: only retrieval-related parameters. Never security or core settings.
-func ApplySuggestion(ctx context.Context, agentStore store.AgentStore, sugStore store.EvolutionSuggestionStore, sg store.EvolutionSuggestion) error {
+func ApplySuggestion(ctx context.Context, agentStore store.AgentStore, sugStore store.EvolutionSuggestionStore, sg store.EvolutionSuggestion, guardrails AdaptationGuardrails) error {
 	// Load current agent config.
 	agent, err := agentStore.GetByID(ctx, sg.AgentID)
 	if err != nil {
@@ -102,12 +87,20 @@ func ApplySuggestion(ctx context.Context, agentStore store.AgentStore, sugStore 
 	// Apply suggestion-specific changes based on type.
 	switch sg.SuggestionType {
 	case store.SuggestThreshold:
-		// Raise retrieval threshold slightly (bounded by guardrails).
+		// Raise retrieval threshold by MaxDeltaPerCycle (bounded by guardrails).
 		current, _ := otherConfig["retrieval_threshold"].(float64)
 		if current == 0 {
 			current = 0.3 // default threshold
 		}
-		otherConfig["retrieval_threshold"] = current + 0.05 // conservative bump
+		delta := guardrails.MaxDeltaPerCycle
+		if delta <= 0 {
+			delta = 0.05 // fallback
+		}
+		newThreshold := current + delta
+		if newThreshold > 0.95 {
+			newThreshold = 0.95
+		}
+		otherConfig["retrieval_threshold"] = newThreshold
 	default:
 		// Non-threshold suggestions are informational only, no auto-apply.
 		return fmt.Errorf("suggestion type %q does not support auto-apply", sg.SuggestionType)

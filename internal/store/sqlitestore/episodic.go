@@ -69,7 +69,7 @@ func (s *SQLiteEpisodicStore) Get(ctx context.Context, id string) (*store.Episod
 	row := s.db.QueryRowContext(ctx, `
 		SELECT id, tenant_id, agent_id, user_id, session_key, summary, key_topics,
 		       turn_count, token_count, l0_abstract, source_id, source_type,
-		       created_at, expires_at
+		       created_at, expires_at, recall_count, recall_score, last_recalled_at
 		FROM episodic_summaries WHERE id = ? AND tenant_id = ?`,
 		id, tenantID.String())
 	return scanSQLiteEpisodic(row)
@@ -96,7 +96,7 @@ func (s *SQLiteEpisodicStore) List(ctx context.Context, agentID, userID string, 
 	if userID != "" {
 		q = `SELECT id, tenant_id, agent_id, user_id, session_key, summary, key_topics,
 			       turn_count, token_count, l0_abstract, source_id, source_type,
-			       created_at, expires_at
+			       created_at, expires_at, recall_count, recall_score, last_recalled_at
 			FROM episodic_summaries
 			WHERE agent_id = ? AND user_id = ? AND tenant_id = ?
 			ORDER BY created_at DESC LIMIT ? OFFSET ?`
@@ -104,7 +104,7 @@ func (s *SQLiteEpisodicStore) List(ctx context.Context, agentID, userID string, 
 	} else {
 		q = `SELECT id, tenant_id, agent_id, user_id, session_key, summary, key_topics,
 			       turn_count, token_count, l0_abstract, source_id, source_type,
-			       created_at, expires_at
+			       created_at, expires_at, recall_count, recall_score, last_recalled_at
 			FROM episodic_summaries
 			WHERE agent_id = ? AND tenant_id = ?
 			ORDER BY created_at DESC LIMIT ? OFFSET ?`
@@ -148,23 +148,67 @@ func (s *SQLiteEpisodicStore) PruneExpired(ctx context.Context) (int, error) {
 
 // ListUnpromoted returns summaries not yet promoted, oldest first.
 func (s *SQLiteEpisodicStore) ListUnpromoted(ctx context.Context, agentID, userID string, limit int) ([]store.EpisodicSummary, error) {
+	return s.listUnpromoted(ctx, agentID, userID, limit, "created_at ASC")
+}
+
+// ListUnpromotedScored returns unpromoted summaries ordered by recall_score DESC
+// (ties broken by created_at ASC). Backed by idx_episodic_recall_unpromoted
+// (schema.sql). Mirrors PGEpisodicStore.ListUnpromotedScored.
+func (s *SQLiteEpisodicStore) ListUnpromotedScored(ctx context.Context, agentID, userID string, limit int) ([]store.EpisodicSummary, error) {
+	return s.listUnpromoted(ctx, agentID, userID, limit, "recall_score DESC, created_at ASC")
+}
+
+// listUnpromoted shares the query shape between the two ListUnpromoted*
+// variants. `orderBy` is a static literal from the caller, never derived
+// from user input, so the concatenation below is safe.
+func (s *SQLiteEpisodicStore) listUnpromoted(ctx context.Context, agentID, userID string, limit int, orderBy string) ([]store.EpisodicSummary, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	tenantID := tenantIDForInsert(ctx)
-	rows, err := s.db.QueryContext(ctx, `
+	query := `
 		SELECT id, tenant_id, agent_id, user_id, session_key, summary, key_topics,
 		       turn_count, token_count, l0_abstract, source_id, source_type,
-		       created_at, expires_at
+		       created_at, expires_at,
+		       recall_count, recall_score, last_recalled_at
 		FROM episodic_summaries
 		WHERE agent_id = ? AND user_id = ? AND tenant_id = ? AND promoted_at IS NULL
-		ORDER BY created_at ASC LIMIT ?`,
-		agentID, userID, tenantID.String(), limit)
+		ORDER BY ` + orderBy + ` LIMIT ?`
+	rows, err := s.db.QueryContext(ctx, query, agentID, userID, tenantID.String(), limit)
 	if err != nil {
 		return nil, fmt.Errorf("episodic list_unpromoted: %w", err)
 	}
 	defer rows.Close()
 	return scanSQLiteEpisodicRows(rows)
+}
+
+// RecordRecall increments recall_count, folds `score` into the running
+// average stored in recall_score, and sets last_recalled_at. Atomic single
+// UPDATE; the SET clause reads OLD row values (SQLite evaluates expressions
+// against the pre-update tuple), so the running average is computed
+// correctly in one statement.
+func (s *SQLiteEpisodicStore) RecordRecall(ctx context.Context, id string, score float64) error {
+	if id == "" {
+		return nil
+	}
+	if score < 0 {
+		score = 0
+	} else if score > 1 {
+		score = 1
+	}
+	tenantID := tenantIDForInsert(ctx)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE episodic_summaries
+		SET recall_count = recall_count + 1,
+		    recall_score = (recall_score * recall_count + ?) / (recall_count + 1),
+		    last_recalled_at = ?
+		WHERE id = ? AND tenant_id = ?`,
+		score, now, id, tenantID.String())
+	if err != nil {
+		return fmt.Errorf("episodic record_recall: %w", err)
+	}
+	return nil
 }
 
 // MarkPromoted sets promoted_at=now() for the given IDs.
@@ -211,18 +255,22 @@ func (s *SQLiteEpisodicStore) CountUnpromoted(ctx context.Context, agentID, user
 	return count, nil
 }
 
-// scanSQLiteEpisodic scans a single row into EpisodicSummary.
+// scanSQLiteEpisodic scans a single row into EpisodicSummary. Column order
+// matches the SELECT lists in Get / List / ListUnpromoted* (17 columns incl.
+// Phase 10 recall signals).
 func scanSQLiteEpisodic(row *sql.Row) (*store.EpisodicSummary, error) {
 	var ep store.EpisodicSummary
 	var idStr, tenantStr, agentStr string
 	var topicsBytes []byte
 	var createdAt sqliteTime
 	var expiresAt nullSqliteTime
+	var lastRecalledAt nullSqliteTime
 	err := row.Scan(
 		&idStr, &tenantStr, &agentStr, &ep.UserID, &ep.SessionKey,
 		&ep.Summary, &topicsBytes, &ep.TurnCount, &ep.TokenCount,
 		&ep.L0Abstract, &ep.SourceID, &ep.SourceType,
-		&createdAt, &expiresAt)
+		&createdAt, &expiresAt,
+		&ep.RecallCount, &ep.RecallScore, &lastRecalledAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -238,6 +286,10 @@ func scanSQLiteEpisodic(row *sql.Row) (*store.EpisodicSummary, error) {
 		t := expiresAt.Time
 		ep.ExpiresAt = &t
 	}
+	if lastRecalledAt.Valid {
+		t := lastRecalledAt.Time
+		ep.LastRecalledAt = &t
+	}
 	return &ep, nil
 }
 
@@ -250,11 +302,13 @@ func scanSQLiteEpisodicRows(rows *sql.Rows) ([]store.EpisodicSummary, error) {
 		var topicsBytes []byte
 		var createdAt sqliteTime
 		var expiresAt nullSqliteTime
+		var lastRecalledAt nullSqliteTime
 		if err := rows.Scan(
 			&idStr, &tenantStr, &agentStr, &ep.UserID, &ep.SessionKey,
 			&ep.Summary, &topicsBytes, &ep.TurnCount, &ep.TokenCount,
 			&ep.L0Abstract, &ep.SourceID, &ep.SourceType,
-			&createdAt, &expiresAt); err != nil {
+			&createdAt, &expiresAt,
+			&ep.RecallCount, &ep.RecallScore, &lastRecalledAt); err != nil {
 			return nil, err
 		}
 		ep.ID, _ = uuid.Parse(idStr)
@@ -265,6 +319,10 @@ func scanSQLiteEpisodicRows(rows *sql.Rows) ([]store.EpisodicSummary, error) {
 		if expiresAt.Valid {
 			t := expiresAt.Time
 			ep.ExpiresAt = &t
+		}
+		if lastRecalledAt.Valid {
+			t := lastRecalledAt.Time
+			ep.LastRecalledAt = &t
 		}
 		results = append(results, ep)
 	}

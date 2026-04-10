@@ -47,7 +47,7 @@ func (l *Loop) pipelineCallbacks(req *RunRequest, bridgeRS *runState) pipelineCa
 		buildFilteredTools: l.makeBuildFilteredTools(req),
 		callLLM:            l.makeCallLLM(req, emitRun),
 		pruneMessages:      l.makePruneMessages(),
-		compactMessages:    l.makeCompactMessages(),
+		compactMessages:    l.makeCompactMessages(req),
 		runMemoryFlush:     l.makeRunMemoryFlush(),
 		executeToolCall:    l.makeExecuteToolCall(req, bridgeRS),
 		executeToolRaw:     l.makeExecuteToolRaw(req),
@@ -241,6 +241,9 @@ func (l *Loop) makeCallLLM(req *RunRequest, emitRun func(AgentEvent)) func(ctx c
 		if effort := reasoningDecision.RequestEffort(); effort != "" {
 			chatReq.Options[providers.OptThinkingLevel] = effort
 		}
+		if reasoningDecision.StripThinking {
+			chatReq.Options[providers.OptStripThinking] = true
+		}
 
 		// Emit LLM span start for tracing.
 		start := time.Now().UTC()
@@ -309,15 +312,29 @@ func (l *Loop) makePruneMessages() func(msgs []providers.Message, budget int) []
 	}
 }
 
-func (l *Loop) makeCompactMessages() func(ctx context.Context, msgs []providers.Message, model string) ([]providers.Message, error) {
+func (l *Loop) makeCompactMessages(req *RunRequest) func(ctx context.Context, msgs []providers.Message, model string) ([]providers.Message, error) {
 	return func(ctx context.Context, msgs []providers.Message, model string) ([]providers.Message, error) {
 		compacted := l.compactMessagesInPlace(ctx, msgs)
 		if compacted == nil {
 			return msgs, nil // compaction failed, return original
 		}
+		// Stamp session metadata with the compaction timestamp so operators
+		// can diagnose compaction cadence without a dedicated column. Stored
+		// as RFC3339 string in sessions.metadata JSONB (flushed on next save).
+		if l.sessions != nil && req != nil && req.SessionKey != "" {
+			l.sessions.SetSessionMetadata(ctx, req.SessionKey, map[string]string{
+				SessionMetaKeyLastCompactionAt: time.Now().UTC().Format(time.RFC3339),
+			})
+		}
 		return compacted, nil
 	}
 }
+
+// SessionMetaKeyLastCompactionAt is the sessions.metadata JSONB key used to
+// record the RFC3339 timestamp of the most recent compaction. Exported so
+// the web UI code path can read it back via GetSessionMetadata without
+// duplicating the string.
+const SessionMetaKeyLastCompactionAt = "last_compaction_at"
 
 func (l *Loop) makeRunMemoryFlush() func(ctx context.Context, state *pipeline.RunState) error {
 	return func(ctx context.Context, state *pipeline.RunState) error {

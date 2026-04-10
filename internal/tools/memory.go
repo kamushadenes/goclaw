@@ -180,8 +180,45 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]any) *Re
 
 	// Record retrieval metric non-blocking (best-effort).
 	t.recordRetrievalMetric(ctx, len(combined), episodicResults)
+	// Phase 10: update per-episode recall signals for dreaming weighted
+	// scoring. Fire-and-forget — recall tracking must never block the hot
+	// search path or surface errors to the agent loop.
+	t.recordEpisodicRecall(ctx, episodicResults)
 
 	return NewResult(string(data))
+}
+
+// recordEpisodicRecall schedules a best-effort RecordRecall update per
+// episodic hit so DreamingWorker can prioritise useful entries. Runs in a
+// background goroutine bounded by a 5s timeout so slow DBs can't leak.
+func (t *MemorySearchTool) recordEpisodicRecall(ctx context.Context, episodic []store.EpisodicSearchResult) {
+	if t.episodicStore == nil || len(episodic) == 0 {
+		return
+	}
+	tenantID := store.TenantIDFromContext(ctx)
+	if tenantID == uuid.Nil {
+		return
+	}
+	// Snapshot hits so the goroutine doesn't observe caller mutations.
+	hits := make([]store.EpisodicSearchResult, 0, len(episodic))
+	for _, r := range episodic {
+		if r.EpisodicID == "" {
+			continue
+		}
+		hits = append(hits, r)
+	}
+	if len(hits) == 0 {
+		return
+	}
+	go func() {
+		bgCtx, cancel := context.WithTimeout(store.WithTenantID(context.Background(), tenantID), 5*time.Second)
+		defer cancel()
+		for _, r := range hits {
+			if err := t.episodicStore.RecordRecall(bgCtx, r.EpisodicID, r.Score); err != nil {
+				slog.Debug("memory.recall.record_failed", "episodic_id", r.EpisodicID, "error", err)
+			}
+		}
+	}()
 }
 
 // recordRetrievalMetric records a memory_search retrieval metric in a background goroutine.

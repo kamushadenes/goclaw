@@ -27,10 +27,56 @@ type dreamingWorker struct {
 	episodicStore store.EpisodicStore
 	memoryStore   store.MemoryStore
 	provider      providers.Provider
-	model         string        // LLM model for synthesis
-	threshold     int           // min unpromoted entries before running
-	debounce      time.Duration // min interval between runs per agent/user
-	lastRun       sync.Map      // key: "agentID:userID" → time.Time
+	model         string // LLM model for synthesis
+
+	// threshold/debounce are the global defaults. Per-agent overrides come
+	// from resolveConfig which reads the agent's MemoryConfig.Dreaming JSONB.
+	threshold     int
+	debounce      time.Duration
+	resolveConfig DreamingConfigResolver
+
+	lastRun sync.Map // key: "agentID:userID" → time.Time
+}
+
+// formatEntryForSynthesis renders a single episodic entry with recall
+// metadata for the LLM synthesis prompt. Entries with recall signal are
+// tagged so the LLM can weight them higher; unrecalled entries pass through
+// as plain summaries.
+func formatEntryForSynthesis(e store.EpisodicSummary) string {
+	if e.RecallCount == 0 {
+		return e.Summary
+	}
+	lastRecall := "never"
+	if e.LastRecalledAt != nil {
+		lastRecall = e.LastRecalledAt.Format("Jan 2")
+	}
+	return fmt.Sprintf("[recalled %dx, last: %s] %s", e.RecallCount, lastRecall, e.Summary)
+}
+
+// logSkip emits dreaming skip reasons at debug level by default, elevating
+// to info when verbose logging is enabled via per-agent config.
+func logSkip(verbose bool, msg string, args ...any) {
+	if verbose {
+		slog.Info(msg, args...)
+		return
+	}
+	slog.Debug(msg, args...)
+}
+
+// effectiveConfig merges the worker's defaults with any per-agent override.
+// Centralised so tests can reason about the precedence in one place.
+func (w *dreamingWorker) effectiveConfig(ctx context.Context, agentID string) resolvedDreamingConfig {
+	base := defaultDreamingConfig()
+	if w.threshold > 0 {
+		base.Threshold = w.threshold
+	}
+	if w.debounce > 0 {
+		base.Debounce = w.debounce
+	}
+	if w.resolveConfig == nil {
+		return base
+	}
+	return mergeDreamingConfig(base, w.resolveConfig(ctx, agentID))
 }
 
 // Handle processes an episodic.created event for the dreaming pipeline.
@@ -45,41 +91,55 @@ func (w *dreamingWorker) Handle(ctx context.Context, event eventbus.DomainEvent)
 	agentID := event.AgentID
 	userID := event.UserID
 
+	// Resolve per-agent config (threshold/debounce/enabled). Falls back to
+	// struct defaults when no override is stored on the agent.
+	cfg := w.effectiveConfig(ctx, agentID)
+	if !cfg.Enabled {
+		if cfg.VerboseLog {
+			slog.Info("dreaming: disabled for agent", "agent", agentID, "user", userID)
+		}
+		return nil
+	}
+
 	// Debounce: skip if ran recently for this pair.
 	key := agentID + ":" + userID
-	debounce := w.debounce
-	if debounce == 0 {
-		debounce = dreamingDefaultDebounce
-	}
 	if v, ok := w.lastRun.Load(key); ok {
-		if last, ok := v.(time.Time); ok && time.Since(last) < debounce {
-			slog.Debug("dreaming: debounce skip", "agent", agentID, "user", userID)
+		if last, ok := v.(time.Time); ok && time.Since(last) < cfg.Debounce {
+			logSkip(cfg.VerboseLog, "dreaming: debounce skip", "agent", agentID, "user", userID)
 			return nil
 		}
 	}
 
 	// Count unpromoted entries; skip if below threshold.
-	threshold := w.threshold
-	if threshold <= 0 {
-		threshold = dreamingDefaultThreshold
-	}
 	count, err := w.episodicStore.CountUnpromoted(ctx, agentID, userID)
 	if err != nil {
 		slog.Warn("dreaming: count unpromoted failed", "err", err, "agent", agentID)
 		return nil
 	}
-	if count < threshold {
-		slog.Debug("dreaming: below threshold", "count", count, "threshold", threshold, "agent", agentID)
+	if count < cfg.Threshold {
+		logSkip(cfg.VerboseLog, "dreaming: below threshold", "count", count, "threshold", cfg.Threshold, "agent", agentID)
 		return nil
 	}
 
-	// Fetch unpromoted entries.
-	entries, err := w.episodicStore.ListUnpromoted(ctx, agentID, userID, dreamingFetchLimit)
+	// Fetch unpromoted entries ordered by recall_score DESC (Phase 10). Falls
+	// back to created_at ASC for ties so agents with no recall history still
+	// get oldest-first behaviour.
+	entries, err := w.episodicStore.ListUnpromotedScored(ctx, agentID, userID, dreamingFetchLimit)
 	if err != nil {
 		slog.Warn("dreaming: list unpromoted failed", "err", err, "agent", agentID)
 		return nil
 	}
+	// Filter by recall-score thresholds before synthesis so weak entries
+	// don't burn LLM tokens. Never-recalled entries bypass the count minimum
+	// via the freshness component in ComputeRecallScore.
+	entries = filterByRecallThresholds(entries, defaultRecallThresholds(), time.Now().UTC())
 	if len(entries) == 0 {
+		// Stamp lastRun even on empty-filter skips — otherwise every subsequent
+		// episodic.created event re-runs CountUnpromoted + ListUnpromotedScored
+		// + filter in a tight loop until the agent accumulates fresh content.
+		// See code review note P10.1.
+		w.lastRun.Store(key, time.Now())
+		logSkip(cfg.VerboseLog, "dreaming: all entries below recall thresholds", "agent", agentID, "user", userID)
 		return nil
 	}
 
@@ -119,10 +179,12 @@ func (w *dreamingWorker) Handle(ctx context.Context, event eventbus.DomainEvent)
 }
 
 // synthesize calls the LLM to extract long-term facts from session summaries.
+// Each entry is annotated with its recall metadata so the LLM can weight
+// frequently-recalled memories higher during synthesis.
 func (w *dreamingWorker) synthesize(ctx context.Context, entries []store.EpisodicSummary) (string, error) {
 	summaries := make([]string, len(entries))
 	for i, e := range entries {
-		summaries[i] = e.Summary
+		summaries[i] = formatEntryForSynthesis(e)
 	}
 	body := strings.Join(summaries, "\n---\n")
 

@@ -295,6 +295,11 @@ func (l *Loop) maybeSummarize(ctx context.Context, sessionKey string) {
 		l.sessions.SetSummary(sctx, sessionKey, SanitizeAssistantContent(resp.Content))
 		l.sessions.TruncateHistory(sctx, sessionKey, keepLast)
 		l.sessions.IncrementCompaction(sctx, sessionKey)
+		// Mirror SessionMetaKeyLastCompactionAt from the v3 prune/compact path
+		// so the legacy v2 post-turn summarizer also surfaces compaction cadence.
+		l.sessions.SetSessionMetadata(sctx, sessionKey, map[string]string{
+			SessionMetaKeyLastCompactionAt: time.Now().UTC().Format(time.RFC3339),
+		})
 		l.sessions.Save(sctx, sessionKey)
 	}()
 }

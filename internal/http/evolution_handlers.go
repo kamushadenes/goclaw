@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -26,6 +27,9 @@ type EvolutionHandler struct {
 
 	// Optional: agent store for applying threshold suggestions.
 	agentStore store.AgentStore
+
+	// Optional: tenant tool config for disabling tools on SuggestToolOrder approval.
+	toolTenantCfgs store.BuiltinToolTenantConfigStore
 }
 
 // EvolutionHandlerOpt configures optional EvolutionHandler dependencies.
@@ -43,6 +47,11 @@ func WithSkillCreation(ss store.SkillManageStore, loader *skills.Loader, dataDir
 // WithAgentStore enables threshold suggestion auto-apply on approval.
 func WithAgentStore(as store.AgentStore) EvolutionHandlerOpt {
 	return func(h *EvolutionHandler) { h.agentStore = as }
+}
+
+// WithToolTenantCfgs enables tool disabling on SuggestToolOrder approval.
+func WithToolTenantCfgs(tc store.BuiltinToolTenantConfigStore) EvolutionHandlerOpt {
+	return func(h *EvolutionHandler) { h.toolTenantCfgs = tc }
 }
 
 func NewEvolutionHandler(m store.EvolutionMetricsStore, s store.EvolutionSuggestionStore, opts ...EvolutionHandlerOpt) *EvolutionHandler {
@@ -222,6 +231,29 @@ func (h *EvolutionHandler) handleUpdateSuggestion(w http.ResponseWriter, r *http
 			writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "action": "skill_created"})
 			return
 
+		case store.SuggestToolOrder:
+			action := "tool_order_approved"
+			if h.toolTenantCfgs != nil {
+				// Extract tool name from suggestion parameters.
+				var params map[string]any
+				if err := json.Unmarshal(existing.Parameters, &params); err == nil {
+					if toolName, _ := params["tool"].(string); toolName != "" {
+						// Disable tool at tenant level using existing infrastructure.
+						if err := h.toolTenantCfgs.Set(r.Context(), existing.TenantID, toolName, false); err != nil {
+							slog.Warn("evolution.tool_order.disable_failed", "tool", toolName, "error", err)
+						} else {
+							action = "tool_disabled"
+						}
+					}
+				}
+			}
+			if err := h.suggestions.UpdateSuggestionStatus(r.Context(), suggestionID, "applied", reviewedBy); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "action": action})
+			return
+
 		case store.SuggestThreshold:
 			if h.agentStore == nil {
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "threshold auto-apply not available"})
@@ -240,7 +272,7 @@ func (h *EvolutionHandler) handleUpdateSuggestion(w http.ResponseWriter, r *http
 				writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 				return
 			}
-			if err := agent.ApplySuggestion(r.Context(), h.agentStore, h.suggestions, *existing); err != nil {
+			if err := agent.ApplySuggestion(r.Context(), h.agentStore, h.suggestions, *existing, guardrails); err != nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 				return
 			}

@@ -24,6 +24,10 @@ type ConsolidationDeps struct {
 	Provider      providers.Provider // for LLM summarization
 	Model         string
 	Extractor     EntityExtractor
+	// AgentStore is optional: when present, the dreaming worker reads
+	// per-agent overrides from MemoryConfig.Dreaming. If nil, the worker
+	// uses its built-in defaults for every agent.
+	AgentStore store.AgentCRUDStore
 }
 
 // Register wires all consolidation workers to the event bus.
@@ -52,6 +56,7 @@ func Register(deps ConsolidationDeps) func() {
 		model:         deps.Model,
 		threshold:     dreamingDefaultThreshold,
 		debounce:      dreamingDefaultDebounce,
+		resolveConfig: newAgentStoreResolver(deps.AgentStore),
 	}
 
 	unsub1 := deps.EventBus.Subscribe(eventbus.EventSessionCompleted, episodic.Handle)

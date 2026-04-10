@@ -32,6 +32,59 @@ All notable changes to GoClaw Gateway are documented here. Format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+#### Episodic Memory Weighted Scoring — Dreaming Enhancement (2026-04-10, Phase 10)
+- **Recall signal tracking**: `episodic_summaries` table gains 3 columns: `recall_count INT`, `recall_score DOUBLE PRECISION`, `last_recalled_at TIMESTAMPTZ` to track usefulness of each memory
+- **ComputeRecallScore formula**: 4-component running average (30% frequency + 35% relevance + 20% recency + 15% freshness, 14-day half-life) quantifies memory value
+- **DreamingWorker prioritization**: `ListUnpromotedScored()` queries sort by `recall_score DESC` instead of `created_at ASC`, promoting high-signal summaries for synthesis
+- **fire-and-forget updates**: `memory_search` tool fire-and-forget tasks increment recall counts asynchronously without blocking search results
+- **Index optimization**: New partial index `idx_episodic_recall_unpromoted ON episodic_summaries(agent_id, user_id, recall_score DESC) WHERE promoted_at IS NULL` for efficient DreamingWorker queries
+- **Migration 000045**: PG schema v44→45 + SQLite schema v12→13
+
+#### Compaction Telemetry — Message Context Tracking (2026-04-10, Phase 5 Follow-up)
+- **Session metadata tracking**: `sessions.metadata` JSONB gains well-known key `last_compaction_at` (RFC3339 timestamp) after successful message compaction
+- **Dual execution paths**: Both v3 `PruneStage.CompactMessages` and v2 legacy `maybeSummarize` update timestamp on successful compaction
+- **Operator visibility**: `GetSessionMetadata()` exposes compaction timestamp; web UI shows in context-usage tooltip
+- **Go constant export**: `agent.SessionMetaKeyLastCompactionAt = "last_compaction_at"`
+
+#### Provider Reasoning Content Stripping (2026-04-10, Phase 6)
+- **Auto-strip known leakers**: Models known to leak chain-of-thought at effort="off" (Kimi family, DeepSeek-Reasoner) auto-enable `StripThinking` so user-visible `ChatResponse.Thinking` stays empty
+- **Multi-provider support**: Guard clauses in Anthropic streaming, Anthropic non-streaming `Chat()`, OpenAI `ChatStream`/`Chat`, Codex `processSSEEvent`; DashScope inherits via OpenAIProvider embedding
+- **Billing-safe invariants**: `Usage.ThinkingTokens` still counted from raw bytes; `RawAssistantContent` untouched so Anthropic tool-use passback continues to work
+- **Option plumbing**: New `providers.OptStripThinking` key propagated via `ChatRequest.Options`; `ReasoningDecision.StripThinking` auto-set in `ResolveReasoningDecision` defer
+- **Helper**: `modelLeaksReasoning(model string) bool` — extensible allowlist
+
+#### Dreaming Config Per-Agent (2026-04-10, Phase 8)
+- **Per-agent overrides**: `MemoryConfig.Dreaming` JSONB on `agents.memory_config` (nested, no migration) controls dreaming worker behaviour per-agent
+- **Fields**: `Enabled *bool`, `DebounceMs int`, `Threshold int`, `VerboseLog *bool` — all pointer/zero-default for partial-override merge semantics
+- **Resolver pattern**: `DreamingConfigResolver func(ctx, agentID) *DreamingConfig` wired via `newAgentStoreResolver(AgentStore)`. `ConsolidationDeps` gains optional `AgentStore store.AgentCRUDStore`
+- **Backward compat**: Nil resolver → struct defaults; empty JSONB → defaults via zero-value short-circuit
+- **Merge helper**: `mergeDreamingConfig` applies override fields only when explicitly set, preserving base values
+
+#### Per-Provider Context Window & Hardening (2026-04-10, Phase 4, commit 8d37dc45)
+- **EffectiveContextWindow**: Resolved once per run in ContextStage from `ModelRegistry` (via provider+model lookup); `PruneStage` uses it with fallback to `Config.ContextWindow`
+- **ReserveTokens safety buffer**: New `PipelineConfig.ReserveTokens` subtracted from history budget so PruneStage compacts slightly before the hard limit
+- **InMemoryCache hardening**: TTL sweep (60s) + max-size cap (10k) with oldest-first eviction; `Close()` wired to gateway shutdown
+- **ContactCollector tenant fix**: Cache key now includes `tenantID + channelInstance` (was silently skipping upserts for same sender across tenants)
+
+#### Context-Aware Auto-Inject Query (2026-04-10, Phase 9, commit 2731f99a)
+- **RecentContext enrichment**: `InjectParams.RecentContext` field supplies last 1-2 user turns; `pgAutoInjector.Inject` prepends "Context:" frame before "Query:" focus
+- **Helper**: `pipeline.buildRecentContext()` walks history backward, picks last 2 user turns, caps at 300 chars
+- **Callback signature**: `AutoInject func(ctx, msg, userID, recentContext string)` — additive, backward compatible
+- **Why**: Vector search on "what's my favorite?" alone returns nothing useful; context-aware query captures conversational intent
+
+#### Cost Calculation Thinking Tokens Fix (2026-04-10, Phase 1, commit 77a80680)
+- **Critical billing bug**: `CalculateCost` now properly handles `ThinkingTokens` as sub-count of `CompletionTokens` (not double-counted for OpenAI o3/o4-mini, Codex/GPT-5; properly split for Anthropic extended thinking)
+- **Provider-aware**: Splits only when `ReasoningPerMillion > 0`, otherwise leaves as-is (default matches provider billing)
+
+#### Web UI Enhancements (2026-04-10, Phase 11)
+- **Context usage badge**: Chat top bar shows `{used}/{max} ({percent}%)` with color ramp (amber ≥75%, destructive ≥90%); hidden on mobile via `hidden sm:flex`
+- **Compaction indicator**: Context badge tooltip includes compaction count + last compaction timestamp (read from `session.metadata.last_compaction_at`)
+- **DreamingConfig UI**: Agent detail MemorySection renders nested dreaming block (4 controls: enabled, threshold, debounce_ms, verbose_log)
+- **i18n**: New keys in en/vi/zh: `agents.configSections.dreaming.*`, `chat.contextUsage.*`
+- **Not shipped (YAGNI)**: "Memory recall config section" (existing MemorySection already covers all MemoryConfig fields), "Session types extension" (fields already present or out of scope)
+
 ### Refactored
 
 #### V3 Architecture Refactor — Phase 6 Completion (2026-04-08)
@@ -233,9 +286,11 @@ All notable changes to GoClaw Gateway are documented here. Format follows [Keep 
 - **File viewer**: Improved workspace file view/download and storage depth control
 - **Pairing DB errors**: Handle transient errors gracefully
 - **Provider thinking**: Corrected DashScope per-model thinking logic
+- **Pancake Page loop guard**: Narrowed webhook ingress to `messaging` + `INBOX` events and normalized HTML-formatted echoes before short-TTL outbound echo suppression, reducing Facebook Page self-reply loops in Pancake inbox conversations
 
 ### Documentation
 
+- Updated `05-channels-messaging.md` — Refreshed `WebhookChannel` / `BlockReplyChannel` implementation tables for Facebook, Pancake, Discord, and Zalo-family channels
 - Updated `18-http-api.md` — Added section 17 for Runtime & Packages Management endpoints
 - Updated `09-security.md` — Added Docker entrypoint documentation, pkg-helper architecture, privilege separation
 - Updated `17-changelog.md` — New entries for packages management, Docker security, and auth fix

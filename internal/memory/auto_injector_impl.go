@@ -41,8 +41,15 @@ func (a *pgAutoInjector) Inject(ctx context.Context, params InjectParams) (*Inje
 		threshold = 0.3
 	}
 
+	// Phase 9: context-aware recall. When the caller supplied RecentContext,
+	// build a richer search query that captures conversational intent. Without
+	// this, vector search on "what's my favorite?" misses memories about the
+	// topic under discussion. With it, the query embedding captures the
+	// follow-up semantics and returns materially better matches.
+	searchQuery := buildRecallQuery(params.UserMessage, params.RecentContext)
+
 	// Search with FTS bias (faster than vector for auto-inject)
-	results, err := a.episodicStore.Search(ctx, params.UserMessage, params.AgentID, params.UserID,
+	results, err := a.episodicStore.Search(ctx, searchQuery, params.AgentID, params.UserID,
 		store.EpisodicSearchOptions{
 			MaxResults:   maxEntries * 2, // fetch more, filter by threshold
 			MinScore:     threshold,
