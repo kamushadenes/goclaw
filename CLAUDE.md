@@ -74,6 +74,7 @@ ui/desktop/                   Wails v2 desktop app (React frontend + embedded ga
 
 - **Store layer:** Interface-based (`store.SessionStore`, `store.AgentStore`, etc.) with shared Dialect pattern in `store/base/`. PostgreSQL (`pg/`) and SQLite (`sqlitestore/`) implementations use `database/sql` + `pgx/v5/stdlib` + sqlx, raw SQL, `BuildMapUpdate()` and `BuildScopeClause()` helpers
 - **Agent types:** `open` (per-user context, 7 files) vs `predefined` (shared context + USER.md per-user)
+- **Agent identity:** Dual-identity pattern (agent_key vs UUID) applies to agents, teams, tenants. Rule: UUID for DB/FK/events, agent_key for logs/paths/UI. See `docs/agent-identity-conventions.md`
 - **Context files:** `agent_context_files` (agent-level) + `user_context_files` (per-user), routed via `ContextFileInterceptor`
 - **Providers:** Anthropic (native HTTP+SSE), OpenAI-compat (HTTP+SSE), DashScope (Alibaba Qwen), Claude CLI (stdio+MCP bridge), ACP (Anthropic Console Proxy), Codex (OpenAI). All use `RetryDo()` for retries. Loads from `llm_providers` table with encrypted API keys. ProviderAdapter enables pluggable implementations with ModelRegistry forward-compat resolver. Shared SSEScanner in `providers/sse_reader.go` for streaming providers
 - **Pipeline:** 8-stage loop (context→history→prompt→think→act→observe→memory→summarize) with pluggable callbacks, always-on execution path
