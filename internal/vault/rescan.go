@@ -183,17 +183,17 @@ func inferOwnerFromPath(relPath string, agentMap map[string]string, teamSet map[
 
 // InferDocType guesses doc_type from path conventions.
 // Exported so both rescan and vault interceptor share the same logic.
+//
+// Path-prefix rules (memory/, skills/, episodic/, SOUL/IDENTITY/AGENTS)
+// take precedence over extension classification — e.g. `memory/foo.md`
+// classifies as `memory` even though `.md` is a whitelisted note extension.
+// Phase 01: extension fallback uses the shared `extensionDocType` whitelist
+// so PDFs/office files resolve to `document` instead of the prior `note`.
 func InferDocType(relPath string) string {
 	lower := strings.ToLower(relPath)
 	ext := strings.ToLower(filepath.Ext(relPath))
 
-	switch ext {
-	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp",
-		".mp4", ".webm", ".mov", ".avi", ".mkv",
-		".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a":
-		return "media"
-	}
-
+	// Path-based overrides first (memory/ beats .md → note).
 	switch {
 	case strings.HasPrefix(lower, "memory/"):
 		return "memory"
@@ -203,9 +203,13 @@ func InferDocType(relPath string) string {
 		return "skill"
 	case strings.HasPrefix(lower, "episodic/"):
 		return "episodic"
-	default:
-		return "note"
 	}
+
+	// Extension whitelist fallback — single source of truth shared with safe_walk.
+	if _, dt := isIncludedExtension(ext); dt != "" {
+		return dt
+	}
+	return "note"
 }
 
 // InferTitle extracts a human-readable title from a file path.
