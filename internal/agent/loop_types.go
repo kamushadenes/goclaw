@@ -68,10 +68,17 @@ type CacheInvalidateFunc func(agentID uuid.UUID, userID string)
 // Loop is the agent execution loop for one agent instance.
 // Think → Act → Observe cycle with tool execution.
 type Loop struct {
-	id               string
-	displayName      string
-	agentUUID        uuid.UUID // set for context propagation
-	tenantID         uuid.UUID // agent's owning tenant
+	// id is the human-readable agent_key (e.g. "goctech-leader"). Use for logs,
+	// UI events, system prompt rendering, filesystem paths, and context keys.
+	// NEVER set on DB FK columns or DomainEvent.AgentID — those require UUID.
+	// See docs/agent-identity-conventions.md.
+	id          string
+	displayName string
+	// agentUUID is the canonical DB primary key. Use for SQL WHERE/JOIN,
+	// DomainEvent.AgentID, OTel span attributes, and context propagation via
+	// store.WithAgentID. See docs/agent-identity-conventions.md.
+	agentUUID uuid.UUID
+	tenantID  uuid.UUID // agent's owning tenant
 	agentType        string    // "open" or "predefined"
 	defaultTimezone  string    // system default timezone for bootstrap pre-fill
 	provider         providers.Provider

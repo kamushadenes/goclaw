@@ -477,12 +477,12 @@ func (s *PGMemoryStore) Close() error { return nil }
 
 // --- Helpers ---
 
-// parseUUID returns the parsed UUID or a descriptive error.
-// Use for every INSERT/UPDATE/UPSERT/DELETE/SELECT-WHERE path where silent nil
-// would either corrupt data (FK constraints reject it, but callers see cryptic
-// PG code 23503 instead of a clean Go error) OR hide bugs as empty reads /
-// zero-row updates. Phase 4 migration target for all 57 CRITICAL sites.
-// See docs/agent-identity-conventions.md (Phase 6).
+// parseUUID returns the parsed UUID or a descriptive error. Use for every
+// INSERT/UPDATE/UPSERT/DELETE and any SELECT WHERE where silent nil would
+// either corrupt data or hide bugs as empty reads / zero-row updates. FK
+// constraints reject bad writes at the driver layer, but errors there come
+// back as cryptic PG 23503 — parseUUID catches them upstream with a clean
+// Go error. See docs/agent-identity-conventions.md trap zone 3.
 func parseUUID(s string) (uuid.UUID, error) {
 	id, err := uuid.Parse(s)
 	if err != nil {
@@ -492,11 +492,11 @@ func parseUUID(s string) (uuid.UUID, error) {
 }
 
 // parseUUIDOrNil returns the parsed UUID or uuid.Nil on failure, without
-// raising an error. INTENTIONALLY silent — only use for read-only SELECT-WHERE
-// paths where a no-match (empty result) is acceptable. Do NOT use for writes,
-// updates, deletes, or any SELECT where empty result would hide a bug.
-// Prefer parseUUID for any new code.
-// See docs/agent-identity-conventions.md (Phase 6).
+// raising an error. INTENTIONALLY silent — only acceptable on read-only
+// SELECT WHERE paths where a no-match (empty result) is the correct
+// semantics on bad input. Do NOT use for writes, updates, deletes, or any
+// SELECT where an empty result would hide a bug. Prefer parseUUID for new
+// code. See docs/agent-identity-conventions.md trap zone 3.
 func parseUUIDOrNil(s string) uuid.UUID {
 	id, err := uuid.Parse(s)
 	if err != nil {
