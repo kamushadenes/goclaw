@@ -48,7 +48,8 @@ function VaultTreeNode({
   node: TreeNode; depth: number; meta: Map<string, VaultTreeEntry>;
   activePath: string | null; onSelect: (path: string) => void; onLoadMore: (path: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  // Auto-expand first level folders (depth=0) by default
+  const [expanded, setExpanded] = useState(depth === 0 && node.isDir);
   const entry = meta.get(node.path);
 
   const handleToggle = useCallback(() => {
