@@ -52,7 +52,7 @@ func TestValidate_AcceptsValidHTTPHook(t *testing.T) {
 func TestValidate_AcceptsValidPromptHook(t *testing.T) {
 	h := baseValidCommandHook()
 	h.HandlerType = hooks.HandlerPrompt
-	h.Config = map[string]any{"template": "Review this action"}
+	h.Config = map[string]any{"prompt_template": "Review this action"}
 	h.Matcher = "^Write$"
 	h.IfExpr = ""
 	if err := h.Validate(edition.Standard); err != nil {

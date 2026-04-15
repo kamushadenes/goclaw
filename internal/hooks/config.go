@@ -118,6 +118,9 @@ func (h *HookConfig) validateHandler(ed edition.Edition) error {
 		if h.Matcher == "" && h.IfExpr == "" {
 			return fmt.Errorf("hook: prompt handler requires a matcher or if_expr (runaway-cost guard)")
 		}
+		if tmpl, _ := h.Config["prompt_template"].(string); tmpl == "" {
+			return fmt.Errorf("hook: prompt handler requires non-empty prompt_template")
+		}
 	case HandlerCommand, HandlerHTTP:
 		// No extra filter required — matcher/if_expr are optional.
 	default:
