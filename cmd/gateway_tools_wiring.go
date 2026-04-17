@@ -163,13 +163,13 @@ func wireWorkstationTools(
 	pgStores *store.Stores,
 	toolsReg *tools.Registry,
 	domainBus eventbus.DomainEventBus,
-) {
+) func() {
 	if edition.Current().Name != "standard" {
-		return
+		return func() {}
 	}
 	if pgStores.Workstations == nil || pgStores.WorkstationLinks == nil {
 		slog.Warn("workstation tools skipped: workstation stores not initialised")
-		return
+		return func() {}
 	}
 
 	backendCache := workstation.NewBackendCache(pgStores.Workstations, 10*time.Minute)
@@ -239,9 +239,14 @@ func wireWorkstationTools(
 
 		// Phase 7: wire activity audit sink (persists exec done events + nightly prune).
 		if pgStores.WorkstationActivity != nil {
-			workstation.WireActivitySink(domainBus, pgStores.WorkstationActivity)
+			stopSink := workstation.WireActivitySink(domainBus, pgStores.WorkstationActivity)
 			slog.Info("workstation activity audit sink registered")
+			return func() {
+				stopSink()
+				pgStores.WorkstationActivity.Stop()
+			}
 		}
 	}
+	return func() {}
 }
 

@@ -266,7 +266,9 @@ func runGateway() {
 	heartbeatTool, hasMemory := wireExtraTools(pgStores, toolsReg, msgBus, workspace, dataDir, agentCfg, globalSkillsDir, builtinSkillsDir)
 
 	// Register workstation_exec + claude_remote tools (Standard edition only; deny-all until Phase 6).
-	wireWorkstationTools(pgStores, toolsReg, domainBus)
+	// cleanupWorkstation stops the activity sink retention goroutine and drains the write buffer.
+	cleanupWorkstation := wireWorkstationTools(pgStores, toolsReg, domainBus)
+	defer cleanupWorkstation()
 
 	// Create all agents — resolved lazily from database by the managed resolver.
 	agentRouter := agent.NewRouter()

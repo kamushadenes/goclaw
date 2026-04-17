@@ -106,13 +106,7 @@ func (c *AllowlistChecker) Check(
 		}
 	}
 
-	// ── Step 3: env key blocklist ────────────────────────────────────────────
-	// Env comes from the ExecRequest merged map; check only keys, not values.
-	// (Values are not expanded by a shell, so they are safe as literals.)
-	// NOTE: env validation is done in the tool layer (workstation_exec.go) before
-	// Check is called, but we re-validate here as defence-in-depth.
-
-	// ── Step 4: binary allowlist (default-deny) ──────────────────────────────
+	// ── Step 3: binary allowlist (default-deny) ──────────────────────────────
 	// Extract the binary name (basename of cmd, strip path).
 	// e.g. "/usr/bin/git" → "git", "python3" → "python3"
 	binaryName := filepath.Base(cmd)

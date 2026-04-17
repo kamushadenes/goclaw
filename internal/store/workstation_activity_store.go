@@ -34,4 +34,8 @@ type WorkstationActivityStore interface {
 
 	// Prune deletes all rows created before the given time. Returns rows deleted.
 	Prune(ctx context.Context, before time.Time) (int64, error)
+
+	// Stop drains the write buffer and shuts down the background flusher goroutine.
+	// Must be called on gateway shutdown to avoid losing buffered audit rows.
+	Stop()
 }
