@@ -213,7 +213,7 @@ func TestPackagesUpdateRegistry_Executor_Linux(t *testing.T) {
 	// Rather than execute the full update (which requires SSRF bypass),
 	// just verify the registry can dispatch to the executor without error.
 	// The executor's Update method will fail on SSRF validation, which is correct.
-	_, err := registry.Apply(context.Background(), "github", "app", "v2.0.0", meta)
+	_, err := registry.Apply(context.Background(), "github", "github:test/app", "app", "v2.0.0", meta)
 	if err != nil && !strings.Contains(err.Error(), "host not in allowlist") {
 		// Any error other than SSRF validation is unexpected.
 		if !strings.Contains(err.Error(), "localhost") {

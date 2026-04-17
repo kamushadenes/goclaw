@@ -67,17 +67,15 @@ func (c *AllowlistChecker) Invalidate(workstationID uuid.UUID) {
 	c.mu.Unlock()
 }
 
-// Check validates cmd (argv[0]) + args + env against workstation policy.
+// Check validates cmd (argv[0]) + args against workstation policy.
 //
 // Pipeline:
-//  1. NFKC normalize cmd and each arg (C2 fix — collapses Unicode lookalikes)
+//  1. NFKC normalize cmd and each arg (collapses Unicode lookalikes)
 //  2. Reject NUL bytes and CRLF in cmd or any arg (unsafe in all contexts)
-//  3. Reject blocked env keys (LD_PRELOAD, PATH, GOCLAW_*, etc.)
-//  4. Allowlist match on binary name (default-deny)
-//  5. Audit log on deny
+//  3. Allowlist match on binary name (default-deny)
 //
-// The function signature accepts env as map[string]string for the env-key check.
-// Args are validated in-place (normalized slice is returned for downstream use).
+// Env-key validation (LD_PRELOAD, PATH, GOCLAW_*, etc.) is handled
+// separately by CheckEnv, called in the tool wiring layer.
 func (c *AllowlistChecker) Check(
 	ctx context.Context,
 	ws *store.Workstation,
