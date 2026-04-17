@@ -26,21 +26,26 @@ func (s *SSHSession) ID() string { return s.id }
 
 // Exec opens a new ssh.Session on the pooled client, runs the command, and returns a Stream.
 // The command string is composed from req.Cmd, req.Args, and optional req.CWD prefix.
+// Env vars are set via Setenv; when the SSH server rejects Setenv (requires AcceptEnv server config),
+// we fall back to prepending "export K=V;" to the command string so vars still reach the process.
 func (s *SSHSession) Exec(ctx context.Context, req workstation.ExecRequest) (workstation.Stream, error) {
 	sess, err := s.client.NewSession()
 	if err != nil {
 		return nil, fmt.Errorf("ssh[%s]: new session: %w", s.wsKey, err)
 	}
 
-	// Attempt Setenv for each env var. OpenSSH rejects this without AcceptEnv server config;
-	// log failures but continue — caller can prepend env K=V to the command if needed.
+	// Attempt Setenv for each env var. OpenSSH rejects Setenv without AcceptEnv server config.
+	// For rejected vars, build an "export K=V;" prefix that is prepended to the command string.
+	var envPrefixBuilder strings.Builder
 	for k, v := range req.Env {
 		if setErr := sess.Setenv(k, v); setErr != nil {
-			slog.Debug("workstation.ssh_setenv_rejected",
+			slog.Debug("workstation.ssh_setenv_rejected_using_export_fallback",
 				"workstation_key", s.wsKey,
 				"key", k,
 				"err", setErr,
 			)
+			// Fallback: prepend as shell export so the var reaches the remote process.
+			fmt.Fprintf(&envPrefixBuilder, "export %s=%s; ", shellQuote(k), shellQuote(v))
 		}
 	}
 
@@ -56,6 +61,10 @@ func (s *SSHSession) Exec(ctx context.Context, req workstation.ExecRequest) (wor
 	}
 
 	cmdStr := buildCmdString(req)
+	if envPrefixBuilder.Len() > 0 {
+		// Prepend rejected-env exports so CLAUDE_CONFIG_DIR and other vars are available.
+		cmdStr = envPrefixBuilder.String() + cmdStr
+	}
 	if err := sess.Start(cmdStr); err != nil {
 		_ = sess.Close()
 		return nil, fmt.Errorf("ssh[%s]: start %q: %w", s.wsKey, cmdStr, err)

@@ -53,10 +53,15 @@ func WireActivitySink(bus eventbus.DomainEventBus, activityStore store.Workstati
 		agentID := ev.AgentID
 		sessionKey, _ := payload["session_key"].(string)
 
-		// Build cmd_preview from the session key (command is not in done payload).
-		// The done event carries session_key, exit_code, duration_ms — not the raw cmd.
-		// We store session_key as cmd_preview for correlation; real cmd is on exec.start log.
-		cmdPreview := redactSensitive("session:" + sessionKey)
+		// I3 fix: use the "command" field from the done event payload for meaningful
+		// cmd_hash and cmd_preview. Falls back to sessionKey if command is absent
+		// (e.g. events from older tool versions).
+		cmdRaw, _ := payload["command"].(string)
+		if cmdRaw == "" {
+			// Fallback for events without the command field.
+			cmdRaw = "session:" + sessionKey
+		}
+		cmdPreview := redactSensitive(cmdRaw)
 
 		exitCodeF, _ := payload["exit_code"].(int)
 		durationF, _ := payload["duration_ms"].(int64)
@@ -68,7 +73,7 @@ func WireActivitySink(bus eventbus.DomainEventBus, activityStore store.Workstati
 			durationF = int64(df)
 		}
 
-		cmdHash := fmt.Sprintf("%x", sha256.Sum256([]byte(sessionKey)))[:16]
+		cmdHash := fmt.Sprintf("%x", sha256.Sum256([]byte(cmdRaw)))[:16]
 
 		exitCodeVal := exitCodeF
 		durationVal := durationF

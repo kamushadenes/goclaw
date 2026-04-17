@@ -145,9 +145,15 @@ func (p *clientPool) Get(
 	p.clients[ws.ID] = append(p.clients[ws.ID], pc)
 	p.mu.Unlock()
 
+	// I4 fix: wrap release in sync.Once so double-call (e.g. defer + explicit) is idempotent.
+	// Without Once, a double-call would return an extra token to the semaphore, inflating
+	// effective pool capacity beyond maxClientsPerWorkstation.
+	var releaseOnce sync.Once
 	release := func() {
-		p.decRef(ws.ID, client)
-		sem <- struct{}{} // return slot
+		releaseOnce.Do(func() {
+			p.decRef(ws.ID, client)
+			sem <- struct{}{} // return slot
+		})
 	}
 	return client, release, nil
 }

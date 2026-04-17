@@ -79,7 +79,11 @@ func (h *WorkstationsHandler) handleList(w http.ResponseWriter, r *http.Request)
 			i18n.T(locale, i18n.MsgFailedToList, "workstations"))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"workstations": wss})
+	views := make([]*store.SanitizedWorkstation, len(wss))
+	for i := range wss {
+		views[i] = wss[i].SanitizedView()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"workstations": views})
 }
 
 func (h *WorkstationsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +110,7 @@ func (h *WorkstationsHandler) handleGet(w http.ResponseWriter, r *http.Request) 
 			i18n.T(locale, i18n.MsgInternalError, err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"workstation": ws})
+	writeJSON(w, http.StatusOK, map[string]any{"workstation": ws.SanitizedView()})
 }
 
 func (h *WorkstationsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -170,7 +174,7 @@ func (h *WorkstationsHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 			i18n.T(locale, i18n.MsgFailedToCreate, "workstation", err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusCreated, map[string]any{"workstation": ws})
+	writeJSON(w, http.StatusCreated, map[string]any{"workstation": ws.SanitizedView()})
 }
 
 func (h *WorkstationsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
@@ -194,6 +198,32 @@ func (h *WorkstationsHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, protocol.ErrInvalidRequest,
 			i18n.T(locale, i18n.MsgNoUpdatesProvided))
 		return
+	}
+	// I2 fix: validate metadata shape when metadata is being updated.
+	// Fetch current workstation to obtain backend_type for validation.
+	if _, hasMetadata := updates["metadata"]; hasMetadata {
+		current, err := h.wsStore.GetByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeError(w, http.StatusNotFound, protocol.ErrNotFound,
+					i18n.T(locale, i18n.MsgWorkstationNotFound, idStr))
+				return
+			}
+			writeError(w, http.StatusInternalServerError, protocol.ErrInternal,
+				i18n.T(locale, i18n.MsgInternalError, err.Error()))
+			return
+		}
+		metaBytes, err := json.Marshal(updates["metadata"])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.MsgInvalidMetadataShape, string(current.BackendType), err.Error()))
+			return
+		}
+		if err := store.ValidateMetadata(current.BackendType, metaBytes); err != nil {
+			writeError(w, http.StatusBadRequest, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.MsgInvalidMetadataShape, string(current.BackendType), err.Error()))
+			return
+		}
 	}
 	if err := h.wsStore.Update(ctx, id, updates); err != nil {
 		writeError(w, http.StatusInternalServerError, protocol.ErrInternal,
@@ -277,6 +307,19 @@ func (h *WorkstationsHandler) handlePermAdd(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		writeError(w, http.StatusBadRequest, protocol.ErrInvalidRequest,
 			i18n.T(locale, i18n.MsgInvalidID, "workstation"))
+		return
+	}
+	// I5 fix: verify workstation belongs to caller's tenant before adding permission.
+	// GetByID scopes the query by tenant_id in the WHERE clause — returns ErrNoRows if
+	// the workstation exists in a different tenant.
+	if _, err := h.wsStore.GetByID(ctx, wsID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, protocol.ErrNotFound,
+				i18n.T(locale, i18n.MsgWorkstationNotFound, wsID.String()))
+			return
+		}
+		writeError(w, http.StatusInternalServerError, protocol.ErrInternal,
+			i18n.T(locale, i18n.MsgInternalError, err.Error()))
 		return
 	}
 	var body struct {

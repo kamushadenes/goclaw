@@ -187,12 +187,16 @@ func wireWorkstationTools(
 		allowlistChecker := security.NewAllowlistChecker(pgStores.WorkstationPermissions, 30*time.Second)
 		rateLimiter := security.NewWorkstationRateLimiter()
 
-		workstationExecTool.SetPermCheck(func(ctx context.Context, ws *store.Workstation, cmd string, args []string) error {
+		workstationExecTool.SetPermCheck(func(ctx context.Context, ws *store.Workstation, cmd string, args []string, env map[string]string) error {
 			// Rate limit check first (cheap, no DB).
 			agentID := store.AgentIDFromContext(ctx).String()
 			if !rateLimiter.Allow(ws.TenantID, ws.ID, agentID) {
 				locale := store.LocaleFromContext(ctx)
 				return fmt.Errorf("%s", i18n.T(locale, i18n.MsgWorkstationRateLimit))
+			}
+			// Env blocklist check — rejects forbidden/sensitive env keys.
+			if err := allowlistChecker.CheckEnv(ctx, ws, env); err != nil {
+				return err
 			}
 			// Allowlist + input validation (NFKC normalize, NUL/CRLF, binary match).
 			return allowlistChecker.Check(ctx, ws, cmd, args)

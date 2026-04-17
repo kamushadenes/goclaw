@@ -81,7 +81,11 @@ func (m *WorkstationsMethods) handleList(ctx context.Context, client *gateway.Cl
 			i18n.T(locale, i18n.MsgFailedToList, "workstations")))
 		return
 	}
-	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"workstations": wss}))
+	views := make([]*store.SanitizedWorkstation, len(wss))
+	for i := range wss {
+		views[i] = wss[i].SanitizedView()
+	}
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"workstations": views}))
 }
 
 func (m *WorkstationsMethods) handleGet(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
@@ -109,7 +113,7 @@ func (m *WorkstationsMethods) handleGet(ctx context.Context, client *gateway.Cli
 			i18n.T(locale, i18n.MsgInternalError, err.Error())))
 		return
 	}
-	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"workstation": ws}))
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"workstation": ws.SanitizedView()}))
 }
 
 func (m *WorkstationsMethods) handleCreate(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
@@ -168,7 +172,7 @@ func (m *WorkstationsMethods) handleCreate(ctx context.Context, client *gateway.
 			i18n.T(locale, i18n.MsgFailedToCreate, "workstation", err.Error())))
 		return
 	}
-	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"workstation": ws}))
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"workstation": ws.SanitizedView()}))
 }
 
 func (m *WorkstationsMethods) handleUpdate(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
@@ -190,6 +194,32 @@ func (m *WorkstationsMethods) handleUpdate(ctx context.Context, client *gateway.
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
 			i18n.T(locale, i18n.MsgNoUpdatesProvided)))
 		return
+	}
+	// I2 fix: validate metadata shape when metadata is being updated.
+	// Fetch current workstation to obtain backend_type for validation.
+	if _, hasMetadata := params.Updates["metadata"]; hasMetadata {
+		current, err := m.wsStore.GetByID(ctx, id)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrNotFound,
+					i18n.T(locale, i18n.MsgWorkstationNotFound, params.ID)))
+				return
+			}
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal,
+				i18n.T(locale, i18n.MsgInternalError, err.Error())))
+			return
+		}
+		metaBytes, err := json.Marshal(params.Updates["metadata"])
+		if err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.MsgInvalidMetadataShape, string(current.BackendType), err.Error())))
+			return
+		}
+		if err := store.ValidateMetadata(current.BackendType, metaBytes); err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
+				i18n.T(locale, i18n.MsgInvalidMetadataShape, string(current.BackendType), err.Error())))
+			return
+		}
 	}
 	if err := m.wsStore.Update(ctx, id, params.Updates); err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal,
@@ -345,6 +375,19 @@ func (m *WorkstationsMethods) handlePermAdd(ctx context.Context, client *gateway
 	if err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest,
 			i18n.T(locale, i18n.MsgInvalidID, "workstation")))
+		return
+	}
+	// I5 fix: verify workstation belongs to caller's tenant before adding permission.
+	// GetByID scopes the query by tenant_id in the WHERE clause — returns ErrNoRows if
+	// the workstation exists in a different tenant.
+	if _, err := m.wsStore.GetByID(ctx, wsID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrNotFound,
+				i18n.T(locale, i18n.MsgWorkstationNotFound, params.WorkstationID)))
+			return
+		}
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal,
+			i18n.T(locale, i18n.MsgInternalError, err.Error())))
 		return
 	}
 	if params.Pattern == "" {

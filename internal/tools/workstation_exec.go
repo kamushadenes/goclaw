@@ -23,10 +23,11 @@ import (
 
 // PermCheckFn is the signature for workstation permission checks.
 // Phase 6 wires the real implementation; Phase 5 ships with a deny-all sentinel.
-type PermCheckFn func(ctx context.Context, ws *store.Workstation, cmd string, args []string) error
+// env is passed so the checker can also call CheckEnv to block forbidden env vars.
+type PermCheckFn func(ctx context.Context, ws *store.Workstation, cmd string, args []string, env map[string]string) error
 
 // denyAllSentinel is the default permCheck that blocks all exec until Phase 6 wires real checks.
-var denyAllSentinel PermCheckFn = func(_ context.Context, _ *store.Workstation, _ string, _ []string) error {
+var denyAllSentinel PermCheckFn = func(_ context.Context, _ *store.Workstation, _ string, _ []string, _ map[string]string) error {
 	return errors.New("workstation permissions not configured; Phase 6 required")
 }
 
@@ -171,7 +172,8 @@ func (t *WorkstationExecTool) Execute(ctx context.Context, args map[string]any) 
 	}
 
 	// 2. Permission check — deny-all by default until Phase 6.
-	if permErr := t.permCheck(ctx, ws, cmd, execArgs); permErr != nil {
+	// env is passed so the checker can invoke CheckEnv for env var blocklist.
+	if permErr := t.permCheck(ctx, ws, cmd, execArgs, envMap); permErr != nil {
 		slog.Warn("security.workstation_exec_denied",
 			"workstation_id", ws.ID,
 			"agent_id", agentID,
@@ -220,7 +222,12 @@ func (t *WorkstationExecTool) Execute(ctx context.Context, args map[string]any) 
 	}
 
 	// 6. Stream output and collect result.
-	result := t.streamAndCollect(execCtx, stream, ws, agentID, sessionKey)
+	// I3 fix: pass full command string so activity sink can compute meaningful cmd_hash/preview.
+	cmdFull := cmd
+	if len(execArgs) > 0 {
+		cmdFull = cmd + " " + strings.Join(execArgs, " ")
+	}
+	result := t.streamAndCollect(execCtx, stream, ws, agentID, sessionKey, cmdFull)
 
 	slog.Info("workstation.exec.done",
 		"workstation_id", ws.ID,
@@ -300,11 +307,14 @@ func (t *WorkstationExecTool) resolveWorkstation(ctx context.Context, args map[s
 
 // streamAndCollect reads stdout/stderr from stream, emits eventbus chunks, and waits for exit.
 // Returns *Result with exit code and last 2 KB of each stream.
+// cmdFull is the full command string (cmd + args joined) embedded in the done event so
+// the activity sink can compute a meaningful cmd_hash and cmd_preview.
 func (t *WorkstationExecTool) streamAndCollect(
 	ctx context.Context,
 	stream workstation.Stream,
 	ws *store.Workstation,
 	agentID, sessionKey string,
+	cmdFull string,
 ) *Result {
 	var (
 		stdoutTail tailBuffer
@@ -382,6 +392,8 @@ func (t *WorkstationExecTool) streamAndCollect(
 				"duration_ms":    durationMs,
 				"stdout_tail":    stdoutTail.String(),
 				"stderr_tail":    stderrTail.String(),
+				// I3 fix: include command for meaningful cmd_hash/cmd_preview in activity sink.
+				"command": cmdFull,
 			},
 		})
 	}

@@ -9,6 +9,22 @@ import (
 	"github.com/google/uuid"
 )
 
+// SanitizedWorkstation is the safe API view of a Workstation — no secret fields.
+// Used in all HTTP/WS responses to prevent credentials from reaching clients.
+type SanitizedWorkstation struct {
+	ID              uuid.UUID          `json:"id"`
+	WorkstationKey  string             `json:"workstationKey"`
+	TenantID        uuid.UUID          `json:"tenantId"`
+	Name            string             `json:"name"`
+	BackendType     WorkstationBackend `json:"backendType"`
+	DefaultCWD      string             `json:"defaultCwd"`
+	Active          bool               `json:"active"`
+	CreatedAt       time.Time          `json:"createdAt"`
+	UpdatedAt       time.Time          `json:"updatedAt"`
+	CreatedBy       string             `json:"createdBy"`
+	MetadataSummary map[string]any     `json:"metadataSummary,omitempty"`
+}
+
 // WorkstationBackend is the backend type for a workstation.
 type WorkstationBackend string
 
@@ -18,7 +34,9 @@ const (
 )
 
 // Workstation represents a remote execution environment registered to a tenant.
-// metadata and DefaultEnv are stored AES-256-GCM encrypted; in-memory they are plaintext JSON.
+// Metadata and DefaultEnv are stored AES-256-GCM encrypted; in-memory they are plaintext JSON.
+// SECURITY: Metadata and DefaultEnv are excluded from JSON serialization (json:"-") to prevent
+// SSH private keys / passwords from leaking in API responses. Use SanitizedView() for responses.
 type Workstation struct {
 	ID             uuid.UUID          `json:"id"`
 	WorkstationKey string             `json:"workstationKey"`
@@ -26,14 +44,55 @@ type Workstation struct {
 	Name           string             `json:"name"`
 	BackendType    WorkstationBackend `json:"backendType"`
 	// Metadata holds backend-specific config (SSH or Docker). Plaintext after decrypt.
-	Metadata   []byte    `json:"metadata"`
+	// json:"-" prevents SSH keys/passwords from appearing in API responses.
+	Metadata   []byte    `json:"-"`
 	DefaultCWD string    `json:"defaultCwd"`
 	// DefaultEnv holds key=value env overrides. Plaintext after decrypt.
-	DefaultEnv []byte    `json:"defaultEnv"`
+	// json:"-" prevents env secrets from appearing in API responses.
+	DefaultEnv []byte    `json:"-"`
 	Active     bool      `json:"active"`
 	CreatedAt  time.Time `json:"createdAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
 	CreatedBy  string    `json:"createdBy"`
+}
+
+// SanitizedView returns a safe representation for API responses.
+// SSH metadata is summarized (host/port/user/hasKey) without private keys.
+// Docker metadata is summarized (image/containerName) without credentials.
+// Raw Metadata and DefaultEnv bytes are never included.
+func (ws *Workstation) SanitizedView() *SanitizedWorkstation {
+	sv := &SanitizedWorkstation{
+		ID:             ws.ID,
+		WorkstationKey: ws.WorkstationKey,
+		TenantID:       ws.TenantID,
+		Name:           ws.Name,
+		BackendType:    ws.BackendType,
+		DefaultCWD:     ws.DefaultCWD,
+		Active:         ws.Active,
+		CreatedAt:      ws.CreatedAt,
+		UpdatedAt:      ws.UpdatedAt,
+		CreatedBy:      ws.CreatedBy,
+	}
+	// Build metadata summary without exposing credentials.
+	switch ws.BackendType {
+	case BackendSSH:
+		if m, err := UnmarshalSSHMetadata(ws.Metadata); err == nil {
+			sv.MetadataSummary = map[string]any{
+				"host":   m.Host,
+				"port":   m.Port,
+				"user":   m.User,
+				"hasKey": m.PrivateKey != "",
+			}
+		}
+	case BackendDocker:
+		if m, err := UnmarshalDockerMetadata(ws.Metadata); err == nil {
+			sv.MetadataSummary = map[string]any{
+				"image":         m.Image,
+				"containerName": m.Host,
+			}
+		}
+	}
+	return sv
 }
 
 // AgentWorkstationLink binds an agent to a workstation within a tenant.

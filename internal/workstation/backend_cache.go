@@ -19,11 +19,13 @@ type cachedBackend struct {
 // BackendCache is a TTL-based in-memory cache of Backend instances keyed by workstation UUID.
 // On cache miss it opens a new Backend via the registered factory (workstation.Open).
 // Invalidate(id) must be called on workstation update/delete to evict stale entries.
+// sync.Mutex (not RWMutex) is used because lastUsed is mutated on every read-path hit,
+// making an RWMutex unsafe — writes under RLock cause a data race.
 type BackendCache struct {
 	wsStore store.WorkstationStore
 	cache   map[uuid.UUID]*cachedBackend
 	ttl     time.Duration
-	mu      sync.RWMutex
+	mu      sync.Mutex
 }
 
 // NewBackendCache creates a BackendCache with the given TTL.
@@ -37,17 +39,18 @@ func NewBackendCache(wsStore store.WorkstationStore, ttl time.Duration) *Backend
 }
 
 // Get returns a cached Backend for wsID, or opens a new one via Open() on miss.
-// Thread-safe.
+// Thread-safe. Uses a full Mutex (not RWMutex) because lastUsed is updated on cache hit,
+// and mutating a field under RLock is a data race.
 func (c *BackendCache) Get(ctx context.Context, wsID uuid.UUID) (Backend, error) {
-	// Fast path: read lock for cache hit.
-	c.mu.RLock()
+	// Fast path: lock for cache hit and lastUsed update.
+	c.mu.Lock()
 	if cb, ok := c.cache[wsID]; ok && time.Since(cb.lastUsed) < c.ttl {
 		cb.lastUsed = time.Now()
 		b := cb.backend
-		c.mu.RUnlock()
+		c.mu.Unlock()
 		return b, nil
 	}
-	c.mu.RUnlock()
+	c.mu.Unlock()
 
 	// Slow path: fetch from store and open backend.
 	ws, err := c.wsStore.GetByID(ctx, wsID)
