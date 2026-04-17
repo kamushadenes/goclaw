@@ -134,6 +134,13 @@ jobs:
           path: /tmp/digests
           merge-multiple: true
 
+      # Resolve {{name}}/{{suffix}}/{{is_latest}}/{{is_variant}} placeholders.
+      # Why bash-substitution instead of GHA's `${{ matrix.* }}`:
+      # GHA evaluates expressions in a caller's `with:` inputs at CALLER scope,
+      # where `matrix` is undefined (the matrix lives inside this reusable
+      # workflow, not in the caller). Passing `${{ matrix.variant.x }}` from a
+      # caller therefore fails workflow parse. Placeholders let the caller
+      # write template strings that this job resolves at matrix-expansion time.
       - name: Resolve tag rules
         id: tagrules
         env:
