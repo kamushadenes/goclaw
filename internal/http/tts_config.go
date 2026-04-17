@@ -205,165 +205,95 @@ func (h *TTSConfigHandler) handleSave(w http.ResponseWriter, r *http.Request) {
 
 	// Save to system_configs (non-secrets)
 	if h.systemConfigs != nil {
-		if req.Provider != "" {
-			if err := h.systemConfigs.Set(ctx, "tts.provider", req.Provider); err != nil {
-				slog.Error("tts.config: failed to save provider", "error", err)
-				http.Error(w, fmt.Sprintf(`{"error":"save provider: %s"}`, err.Error()), http.StatusInternalServerError)
-				return
-			}
+		set := func(key, val, label string) bool {
+			return saveOrFail(w, ctx, h.systemConfigs.Set, key, val, label)
 		}
-		if req.Auto != "" {
-			if err := h.systemConfigs.Set(ctx, "tts.auto", req.Auto); err != nil {
-				slog.Error("tts.config: failed to save auto", "error", err)
-				http.Error(w, fmt.Sprintf(`{"error":"save auto: %s"}`, err.Error()), http.StatusInternalServerError)
-				return
-			}
+		if req.Provider != "" && !set("tts.provider", req.Provider, "provider") {
+			return
 		}
-		if req.Mode != "" {
-			if err := h.systemConfigs.Set(ctx, "tts.mode", req.Mode); err != nil {
-				slog.Error("tts.config: failed to save mode", "error", err)
-				http.Error(w, fmt.Sprintf(`{"error":"save mode: %s"}`, err.Error()), http.StatusInternalServerError)
-				return
-			}
+		if req.Auto != "" && !set("tts.auto", req.Auto, "auto") {
+			return
 		}
-		if req.MaxLength > 0 {
-			if err := h.systemConfigs.Set(ctx, "tts.max_length", fmt.Sprintf("%d", req.MaxLength)); err != nil {
-				slog.Error("tts.config: failed to save max_length", "error", err)
-				http.Error(w, fmt.Sprintf(`{"error":"save max_length: %s"}`, err.Error()), http.StatusInternalServerError)
-				return
-			}
+		if req.Mode != "" && !set("tts.mode", req.Mode, "mode") {
+			return
 		}
-		if req.TimeoutMs > 0 {
-			if err := h.systemConfigs.Set(ctx, "tts.timeout_ms", fmt.Sprintf("%d", req.TimeoutMs)); err != nil {
-				slog.Error("tts.config: failed to save timeout_ms", "error", err)
-				http.Error(w, fmt.Sprintf(`{"error":"save timeout_ms: %s"}`, err.Error()), http.StatusInternalServerError)
-				return
-			}
+		if req.MaxLength > 0 && !set("tts.max_length", strconv.Itoa(req.MaxLength), "max_length") {
+			return
+		}
+		if req.TimeoutMs > 0 && !set("tts.timeout_ms", strconv.Itoa(req.TimeoutMs), "timeout_ms") {
+			return
 		}
 
 		// Provider-specific non-secrets
 		if req.OpenAI != nil {
-			if apiBase := req.OpenAI.resolvedAPIBase(); apiBase != "" {
-				if err := h.systemConfigs.Set(ctx, "tts.openai.api_base", apiBase); err != nil {
-					slog.Error("tts.config: failed to save openai api_base", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save openai api_base: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if v := req.OpenAI.resolvedAPIBase(); v != "" && !set("tts.openai.api_base", v, "openai api_base") {
+				return
 			}
-			if voice := req.OpenAI.resolvedVoice(); voice != "" {
-				if err := h.systemConfigs.Set(ctx, "tts.openai.voice", voice); err != nil {
-					slog.Error("tts.config: failed to save openai voice", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save openai voice: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if v := req.OpenAI.resolvedVoice(); v != "" && !set("tts.openai.voice", v, "openai voice") {
+				return
 			}
-			if model := req.OpenAI.resolvedModel(); model != "" {
-				if err := h.systemConfigs.Set(ctx, "tts.openai.model", model); err != nil {
-					slog.Error("tts.config: failed to save openai model", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save openai model: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if v := req.OpenAI.resolvedModel(); v != "" && !set("tts.openai.model", v, "openai model") {
+				return
 			}
 		}
 		if req.ElevenLabs != nil {
-			if apiBase := req.ElevenLabs.resolvedAPIBase(); apiBase != "" {
-				if err := h.systemConfigs.Set(ctx, "tts.elevenlabs.api_base", apiBase); err != nil {
-					slog.Error("tts.config: failed to save elevenlabs api_base", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save elevenlabs api_base: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if v := req.ElevenLabs.resolvedAPIBase(); v != "" && !set("tts.elevenlabs.api_base", v, "elevenlabs api_base") {
+				return
 			}
-			if voice := req.ElevenLabs.resolvedVoice(); voice != "" {
-				if err := h.systemConfigs.Set(ctx, "tts.elevenlabs.voice", voice); err != nil {
-					slog.Error("tts.config: failed to save elevenlabs voice", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save elevenlabs voice: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if v := req.ElevenLabs.resolvedVoice(); v != "" && !set("tts.elevenlabs.voice", v, "elevenlabs voice") {
+				return
 			}
-			if model := req.ElevenLabs.resolvedModel(); model != "" {
-				if err := h.systemConfigs.Set(ctx, "tts.elevenlabs.model", model); err != nil {
-					slog.Error("tts.config: failed to save elevenlabs model", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save elevenlabs model: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if v := req.ElevenLabs.resolvedModel(); v != "" && !set("tts.elevenlabs.model", v, "elevenlabs model") {
+				return
 			}
 		}
 		if req.Edge != nil {
-			if voice := req.Edge.resolvedVoice(); voice != "" {
-				if err := h.systemConfigs.Set(ctx, "tts.edge.voice", voice); err != nil {
-					slog.Error("tts.config: failed to save edge voice", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save edge voice: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if v := req.Edge.resolvedVoice(); v != "" && !set("tts.edge.voice", v, "edge voice") {
+				return
 			}
-			if req.Edge.Rate != "" {
-				if err := h.systemConfigs.Set(ctx, "tts.edge.rate", req.Edge.Rate); err != nil {
-					slog.Error("tts.config: failed to save edge rate", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save edge rate: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if req.Edge.Rate != "" && !set("tts.edge.rate", req.Edge.Rate, "edge rate") {
+				return
 			}
-			if req.Edge.Enabled != nil {
-				if err := h.systemConfigs.Set(ctx, "tts.edge.enabled", fmt.Sprintf("%t", *req.Edge.Enabled)); err != nil {
-					slog.Error("tts.config: failed to save edge enabled", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save edge enabled: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if req.Edge.Enabled != nil && !set("tts.edge.enabled", strconv.FormatBool(*req.Edge.Enabled), "edge enabled") {
+				return
 			}
 		}
 		if req.MiniMax != nil {
-			if apiBase := req.MiniMax.resolvedAPIBase(); apiBase != "" {
-				if err := h.systemConfigs.Set(ctx, "tts.minimax.api_base", apiBase); err != nil {
-					slog.Error("tts.config: failed to save minimax api_base", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save minimax api_base: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if v := req.MiniMax.resolvedAPIBase(); v != "" && !set("tts.minimax.api_base", v, "minimax api_base") {
+				return
 			}
-			if voice := req.MiniMax.resolvedVoice(); voice != "" {
-				if err := h.systemConfigs.Set(ctx, "tts.minimax.voice", voice); err != nil {
-					slog.Error("tts.config: failed to save minimax voice", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save minimax voice: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if v := req.MiniMax.resolvedVoice(); v != "" && !set("tts.minimax.voice", v, "minimax voice") {
+				return
 			}
-			if model := req.MiniMax.resolvedModel(); model != "" {
-				if err := h.systemConfigs.Set(ctx, "tts.minimax.model", model); err != nil {
-					slog.Error("tts.config: failed to save minimax model", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save minimax model: %s"}`, err.Error()), http.StatusInternalServerError)
-					return
-				}
+			if v := req.MiniMax.resolvedModel(); v != "" && !set("tts.minimax.model", v, "minimax model") {
+				return
 			}
 		}
 	}
 
 	// Save secrets (only if not masked)
 	if h.configSecrets != nil {
+		set := func(key, val, label string) bool {
+			return saveOrFail(w, ctx, h.configSecrets.Set, key, val, label)
+		}
 		if req.OpenAI != nil && req.OpenAI.APIKey != "" && req.OpenAI.APIKey != "***" {
-			if err := h.configSecrets.Set(ctx, "tts.openai.api_key", req.OpenAI.APIKey); err != nil {
-				slog.Error("tts.config: failed to save openai api_key", "error", err)
-				http.Error(w, fmt.Sprintf(`{"error":"save openai api_key: %s"}`, err.Error()), http.StatusInternalServerError)
+			if !set("tts.openai.api_key", req.OpenAI.APIKey, "openai api_key") {
 				return
 			}
 		}
 		if req.ElevenLabs != nil && req.ElevenLabs.APIKey != "" && req.ElevenLabs.APIKey != "***" {
-			if err := h.configSecrets.Set(ctx, "tts.elevenlabs.api_key", req.ElevenLabs.APIKey); err != nil {
-				slog.Error("tts.config: failed to save elevenlabs api_key", "error", err)
-				http.Error(w, fmt.Sprintf(`{"error":"save elevenlabs api_key: %s"}`, err.Error()), http.StatusInternalServerError)
+			if !set("tts.elevenlabs.api_key", req.ElevenLabs.APIKey, "elevenlabs api_key") {
 				return
 			}
 		}
 		if req.MiniMax != nil {
 			if req.MiniMax.APIKey != "" && req.MiniMax.APIKey != "***" {
-				if err := h.configSecrets.Set(ctx, "tts.minimax.api_key", req.MiniMax.APIKey); err != nil {
-					slog.Error("tts.config: failed to save minimax api_key", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save minimax api_key: %s"}`, err.Error()), http.StatusInternalServerError)
+				if !set("tts.minimax.api_key", req.MiniMax.APIKey, "minimax api_key") {
 					return
 				}
 			}
 			if req.MiniMax.GroupID != "" {
-				if err := h.configSecrets.Set(ctx, "tts.minimax.group_id", req.MiniMax.GroupID); err != nil {
-					slog.Error("tts.config: failed to save minimax group_id", "error", err)
-					http.Error(w, fmt.Sprintf(`{"error":"save minimax group_id: %s"}`, err.Error()), http.StatusInternalServerError)
+				if !set("tts.minimax.group_id", req.MiniMax.GroupID, "minimax group_id") {
 					return
 				}
 			}
@@ -446,6 +376,16 @@ func NewTenantTTSResolver(sc store.SystemConfigStore, cs store.ConfigSecretsStor
 
 		return provider, providerName, auto, nil
 	}
+}
+
+// saveOrFail invokes setFn; on error logs + writes 500 and returns false.
+func saveOrFail(w http.ResponseWriter, ctx context.Context, setFn func(context.Context, string, string) error, key, val, label string) bool {
+	if err := setFn(ctx, key, val); err != nil {
+		slog.Error("tts.config: failed to save "+label, "error", err)
+		http.Error(w, fmt.Sprintf(`{"error":"save %s: %s"}`, label, err.Error()), http.StatusInternalServerError)
+		return false
+	}
+	return true
 }
 
 func (r *ttsProviderSaveRequest) resolvedAPIBase() string {
