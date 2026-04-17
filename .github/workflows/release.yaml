@@ -21,7 +21,7 @@ env:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
       released: ${{ steps.version.outputs.version != '' }}
@@ -64,7 +64,7 @@ jobs:
   build-binaries:
     needs: release
     if: needs.release.outputs.released == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         include:
@@ -118,7 +118,7 @@ jobs:
   checksums:
     needs: [release, build-binaries]
     if: needs.release.outputs.released == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Download all binary assets
         env:
@@ -146,277 +146,52 @@ jobs:
             --repo "${{ github.repository }}" \
             --clobber
 
-  # Stage 1: Build per-arch images on native runners (no QEMU)
-  docker-images-build:
+  # Docker images: backend variants on both registries, multi-arch
+  docker-images:
     needs: release
     if: needs.release.outputs.released == 'true'
-    runs-on: ${{ matrix.platform.runs_on }}
-    strategy:
-      fail-fast: false
-      matrix:
-        variant:
-          - { name: base,   suffix: "-base",  enable_otel: "false", enable_embedui: "false", enable_python: "false", enable_full_skills: "false" }
-          - { name: latest, suffix: "",       enable_otel: "false", enable_embedui: "true",  enable_python: "true",  enable_full_skills: "false" }
-          - { name: full,   suffix: "-full",  enable_otel: "false", enable_embedui: "true",  enable_python: "true",  enable_full_skills: "true"  }
-          - { name: otel,   suffix: "-otel",  enable_otel: "true",  enable_embedui: "true",  enable_python: "true",  enable_full_skills: "false" }
-        platform:
-          - { name: "linux/amd64", runs_on: ubuntu-latest,    arch: amd64 }
-          - { name: "linux/arm64", runs_on: ubuntu-24.04-arm, arch: arm64 }
-    steps:
-      - uses: actions/checkout@v4
+    uses: ./.github/workflows/docker-multiarch.yaml
+    with:
+      variants-json: >-
+        [
+          {"name":"base","suffix":"-base","enable_otel":"false","enable_embedui":"false","enable_python":"false","enable_full_skills":"false"},
+          {"name":"latest","suffix":"","enable_otel":"false","enable_embedui":"true","enable_python":"true","enable_full_skills":"false"},
+          {"name":"full","suffix":"-full","enable_otel":"false","enable_embedui":"true","enable_python":"true","enable_full_skills":"true"},
+          {"name":"otel","suffix":"-otel","enable_otel":"true","enable_embedui":"true","enable_python":"true","enable_full_skills":"false"}
+        ]
+      tag-rules: |
+        type=raw,value=v${{ needs.release.outputs.version }},suffix=${{ matrix.variant.suffix }}
+        type=raw,value=latest,enable=${{ matrix.variant.suffix == '' }},suffix=
+        type=raw,value=${{ matrix.variant.name }},enable=${{ matrix.variant.suffix != '' }}
+      cache-prefix: release
+      version: v${{ needs.release.outputs.version }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.GHCR_IMAGE }}
-            ${{ env.DOCKERHUB_IMAGE }}
-
-      - name: Build and push by digest
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: ${{ matrix.platform.name }}
-          outputs: type=image,"name=${{ env.GHCR_IMAGE }},${{ env.DOCKERHUB_IMAGE }}",push-by-digest=true,name-canonical=true,push=true
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            ENABLE_OTEL=${{ matrix.variant.enable_otel }}
-            ENABLE_EMBEDUI=${{ matrix.variant.enable_embedui }}
-            ENABLE_PYTHON=${{ matrix.variant.enable_python }}
-            ENABLE_FULL_SKILLS=${{ matrix.variant.enable_full_skills }}
-            VERSION=v${{ needs.release.outputs.version }}
-          cache-from: type=gha,scope=${{ matrix.variant.name }}-${{ matrix.platform.arch }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.variant.name }}-${{ matrix.platform.arch }}
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
-      - name: Upload digest artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: digest-${{ matrix.variant.name }}-${{ matrix.platform.arch }}
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  # Stage 2: Merge per-arch digests into multi-arch manifests per variant
-  docker-images-merge:
-    needs: [release, docker-images-build]
-    if: needs.release.outputs.released == 'true'
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        variant:
-          - { name: base,   suffix: "-base"  }
-          - { name: latest, suffix: ""       }
-          - { name: full,   suffix: "-full"  }
-          - { name: otel,   suffix: "-otel"  }
-    steps:
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Download digests
-        uses: actions/download-artifact@v4
-        with:
-          pattern: digest-${{ matrix.variant.name }}-*
-          path: /tmp/digests
-          merge-multiple: true
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.GHCR_IMAGE }}
-            ${{ env.DOCKERHUB_IMAGE }}
-          tags: |
-            type=raw,value=v${{ needs.release.outputs.version }},suffix=${{ matrix.variant.suffix }}
-            type=raw,value=latest,enable=${{ matrix.variant.suffix == '' }},suffix=
-            type=raw,value=${{ matrix.variant.name }},enable=${{ matrix.variant.suffix != '' }}
-
-      - name: Create and push multi-arch manifest (GHCR)
-        run: |
-          cd /tmp/digests
-          DIGESTS=$(printf "${{ env.GHCR_IMAGE }}@sha256:%s " *)
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map(select(startswith("ghcr.io")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $DIGESTS
-
-      - name: Create and push multi-arch manifest (Docker Hub)
-        run: |
-          cd /tmp/digests
-          DIGESTS=$(printf "${{ env.GHCR_IMAGE }}@sha256:%s " *)
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map(select(startswith("${{ env.DOCKERHUB_IMAGE }}") or startswith("digitop/")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $DIGESTS
-
-      - name: Inspect manifests
-        run: |
-          for tag in $(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON"); do
-            docker buildx imagetools inspect "$tag"
-          done
-
-  # Stage 1: Build web UI image per-arch on native runners (no QEMU)
-  docker-web-build:
+  # Web UI image: single variant, multi-arch
+  docker-web:
     needs: release
     if: needs.release.outputs.released == 'true'
-    runs-on: ${{ matrix.platform.runs_on }}
-    strategy:
-      fail-fast: false
-      matrix:
-        platform:
-          - { name: "linux/amd64", runs_on: ubuntu-latest,    arch: amd64 }
-          - { name: "linux/arm64", runs_on: ubuntu-24.04-arm, arch: arm64 }
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.GHCR_IMAGE }}-web
-            ${{ env.DOCKERHUB_IMAGE }}-web
-
-      - name: Build and push by digest
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: ui/web
-          platforms: ${{ matrix.platform.name }}
-          outputs: type=image,"name=${{ env.GHCR_IMAGE }}-web,${{ env.DOCKERHUB_IMAGE }}-web",push-by-digest=true,name-canonical=true,push=true
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=web-${{ matrix.platform.arch }}
-          cache-to: type=gha,mode=max,scope=web-${{ matrix.platform.arch }}
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
-      - name: Upload digest artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: digest-web-${{ matrix.platform.arch }}
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  # Stage 2: Merge web UI per-arch digests into multi-arch manifest
-  docker-web-merge:
-    needs: [release, docker-web-build]
-    if: needs.release.outputs.released == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Download digests
-        uses: actions/download-artifact@v4
-        with:
-          pattern: digest-web-*
-          path: /tmp/digests
-          merge-multiple: true
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.GHCR_IMAGE }}-web
-            ${{ env.DOCKERHUB_IMAGE }}-web
-          tags: |
-            type=raw,value=v${{ needs.release.outputs.version }}
-            type=raw,value=latest
-
-      - name: Create and push multi-arch manifest (GHCR)
-        run: |
-          cd /tmp/digests
-          DIGESTS=$(printf "${{ env.GHCR_IMAGE }}-web@sha256:%s " *)
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map(select(startswith("ghcr.io")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $DIGESTS
-
-      - name: Create and push multi-arch manifest (Docker Hub)
-        run: |
-          cd /tmp/digests
-          DIGESTS=$(printf "${{ env.GHCR_IMAGE }}-web@sha256:%s " *)
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map(select(startswith("digitop/")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $DIGESTS
-
-      - name: Inspect manifests
-        run: |
-          for tag in $(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON"); do
-            docker buildx imagetools inspect "$tag"
-          done
+    uses: ./.github/workflows/docker-multiarch.yaml
+    with:
+      image-suffix: "-web"
+      build-context: ui/web
+      variants-json: '[{"name":"web","suffix":"","enable_otel":"false","enable_embedui":"false","enable_python":"false","enable_full_skills":"false"}]'
+      tag-rules: |
+        type=raw,value=v${{ needs.release.outputs.version }}
+        type=raw,value=latest
+      cache-prefix: web
+      version: v${{ needs.release.outputs.version }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   # Notify Discord on new release (runs even if docker jobs fail)
   notify-discord:
-    needs: [release, build-binaries, docker-images-merge, docker-web-merge]
+    needs: [release, build-binaries, docker-images, docker-web]
     if: always() && needs.release.outputs.released == 'true' && !cancelled()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Send Discord notification
         env:
