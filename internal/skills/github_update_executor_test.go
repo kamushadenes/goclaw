@@ -96,6 +96,14 @@ func mockAssetServer(t *testing.T, filePath string) *httptest.Server {
 	}))
 }
 
+// withTestInsecureHTTP disables HTTPS + host + IP validation for the duration
+// of the test, allowing httptest servers (http://127.0.0.1) to work.
+func withTestInsecureHTTP(t *testing.T) {
+	t.Helper()
+	testSkipDownloadValidation = true
+	t.Cleanup(func() { testSkipDownloadValidation = false })
+}
+
 // withTestDownloadHosts temporarily allows 127.0.0.1 as a download host so
 // tests pointing at httptest servers (which bind to loopback) pass the SSRF
 // guard. Restores on t.Cleanup.
@@ -121,6 +129,7 @@ func TestGitHubUpdateExecutor_HappyPath(t *testing.T) {
 	// Serve the tarball; replace raw URL with http://127.0.0.1 server.
 	srv := mockAssetServer(t, tarPath)
 	defer srv.Close()
+	withTestInsecureHTTP(t)
 	withTestDownloadHosts(t, srv.URL)
 
 	dir := t.TempDir()
@@ -185,6 +194,7 @@ func TestGitHubUpdateExecutor_ChecksumMismatch(t *testing.T) {
 	tarPath, _ := makeTarballWithBinary(t, "lazygit", binContent)
 	srv := mockAssetServer(t, tarPath)
 	defer srv.Close()
+	withTestInsecureHTTP(t)
 	withTestDownloadHosts(t, srv.URL)
 
 	dir := t.TempDir()
