@@ -38,7 +38,10 @@ func (c *Channel) runPollLoop(parentCtx context.Context) {
 				}
 			}
 		case <-t.C:
-			cycleCtx, cancel := context.WithTimeout(pollCtx, c.pollInterval+5*time.Second)
+			// Cycle ctx must outlive the underlying HTTP client timeout
+			// (30s) — otherwise the ctx fires first and the error says
+			// "context deadline exceeded" instead of the real cause.
+			cycleCtx, cancel := context.WithTimeout(pollCtx, 45*time.Second)
 			err := c.pollOnce(cycleCtx)
 			cancel()
 			switch {

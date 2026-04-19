@@ -33,13 +33,25 @@ type Client struct {
 	apiBase   string
 }
 
-// NewClient returns a Client with the given timeout.
+// NewClient returns a Client with the given timeout. Transport is tuned
+// for Zalo OA's observed behavior: keep-alive reuse (default), but with
+// bounded idle-connection lifetime so stale connections don't sit around
+// and cause spurious "awaiting headers" timeouts on the next call.
 func NewClient(timeout time.Duration) *Client {
 	if timeout <= 0 {
-		timeout = 15 * time.Second
+		timeout = 30 * time.Second // Zalo sometimes takes 10-20s under load
+	}
+	transport := &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 4,
+		IdleConnTimeout:     60 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		ForceAttemptHTTP2:   true,
 	}
 	return &Client{
-		http:      &http.Client{Timeout: timeout},
+		http:      &http.Client{Timeout: timeout, Transport: transport},
 		oauthBase: defaultOAuthBase,
 		apiBase:   defaultAPIBase,
 	}
