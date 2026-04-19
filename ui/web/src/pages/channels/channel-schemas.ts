@@ -69,6 +69,11 @@ export const credentialsSchema: Record<string, FieldDef[]> = {
     { key: "token", label: "OA Access Token", type: "password", required: true },
     { key: "webhook_secret", label: "Webhook Secret", type: "password" },
   ],
+  zalo_oauth: [
+    { key: "app_id", label: "App ID", type: "text", required: true, placeholder: "1234567890", help: "From the Zalo OA developer console" },
+    { key: "secret_key", label: "Secret Key", type: "password", required: true, help: "OAuth v4 secret. Stored encrypted at rest." },
+    { key: "oa_id", label: "OA ID", type: "text", required: false, help: "Auto-discovered after first successful Connect. Leave blank on create." },
+  ],
   zalo_personal: [],
   whatsapp: [],
   facebook: [
@@ -165,6 +170,14 @@ export const configSchema: Record<string, FieldDef[]> = {
     { key: "webhook_url", label: "Webhook URL", type: "text", placeholder: "https://..." },
     { key: "media_max_mb", label: "Max Media Size (MB)", type: "number", defaultValue: 5 },
     { key: "allow_from", label: "Allowed Users", type: "tags", help: "Zalo user IDs" },
+    { key: "block_reply", label: "Block Reply", type: "select", options: blockReplyOptions, defaultValue: "inherit", help: "Deliver intermediate text during tool iterations" },
+  ],
+  zalo_oauth: [
+    { key: "poll_interval_seconds", label: "Poll Interval (seconds)", type: "number", defaultValue: 15, help: "How often to fetch new messages. Min 5, max 120." },
+    { key: "media_max_mb", label: "Max Media Size (MB)", type: "number", defaultValue: 10 },
+    { key: "allow_from", label: "Allowed Users", type: "tags", help: "Zalo user IDs (empty = allow all)" },
+    { key: "dm_policy", label: "DM Policy", type: "select", options: dmPolicyOptions, defaultValue: "pairing" },
+    { key: "file_deny_mime", label: "Blocked File MIME Types", type: "tags", help: "MIME types to reject for outbound files (e.g. application/x-msdownload). Empty = allow all.", advanced: true },
     { key: "block_reply", label: "Block Reply", type: "select", options: blockReplyOptions, defaultValue: "inherit", help: "Deliver intermediate text during tool iterations" },
   ],
   zalo_personal: [

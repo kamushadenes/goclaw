@@ -48,6 +48,7 @@ export interface ReauthDialogProps {
 
 import { ZaloAuthStep, ZaloConfigStep, ZaloEditConfig } from "./zalo/zalo-wizard-steps";
 import { ZaloPersonalQRDialog } from "./zalo/zalo-personal-qr-dialog";
+import { ZaloOAuthPasteCodeDialog } from "./zalo/zalo-oauth-paste-code-dialog";
 import { WhatsAppAuthStep } from "./whatsapp/whatsapp-wizard-steps";
 import { WhatsAppReauthDialog } from "./whatsapp/whatsapp-reauth-dialog";
 
@@ -69,6 +70,7 @@ export const wizardEditConfigs: Record<string, ComponentType<WizardEditConfigPro
 /** Re-auth dialogs for re-authentication from the channels table */
 export const reauthDialogs: Record<string, ComponentType<ReauthDialogProps>> = {
   zalo_personal: ZaloPersonalQRDialog,
+  zalo_oauth: ZaloOAuthPasteCodeDialog,
   whatsapp: WhatsAppReauthDialog,
 };
 
