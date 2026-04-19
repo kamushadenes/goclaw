@@ -5,8 +5,14 @@
 package zalooauth
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 // ChannelCreds is the plaintext shape of the credentials JSON stored
@@ -45,4 +51,21 @@ func (c *ChannelCreds) WithTokens(tok *Tokens) {
 	c.RefreshToken = tok.RefreshToken
 	c.ExpiresAt = tok.ExpiresAt
 	c.LastRefreshAt = time.Now().UTC()
+}
+
+// Persist marshals the (plaintext) creds and writes the resulting blob to
+// the channel_instances row. The store layer re-encrypts on Update, so this
+// function does NO field-level encryption.
+func Persist(ctx context.Context, s store.ChannelInstanceStore, id uuid.UUID, c *ChannelCreds) error {
+	if s == nil {
+		return fmt.Errorf("zalo_oauth: nil ChannelInstanceStore in Persist")
+	}
+	if id == uuid.Nil {
+		return fmt.Errorf("zalo_oauth: nil instance ID in Persist")
+	}
+	blob, err := c.Marshal()
+	if err != nil {
+		return fmt.Errorf("zalo_oauth: marshal creds: %w", err)
+	}
+	return s.Update(ctx, id, map[string]any{"credentials": []byte(blob)})
 }

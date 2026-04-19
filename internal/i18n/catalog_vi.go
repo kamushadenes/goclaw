@@ -229,6 +229,8 @@ func init() {
 		MsgZaloOAuthInvalidChannelType: "kênh không phải loại zalo_oauth",
 		MsgZaloOAuthConnected:          "đã kết nối tài khoản Zalo OA: %s",
 		MsgZaloOAuthInvalidState:       "mã state OAuth không hợp lệ hoặc đã hết hạn",
+		MsgZaloOAuthRefreshFailed:      "làm mới token Zalo OAuth thất bại: %s",
+		MsgZaloOAuthReauthRequired:     "cần cấp quyền lại Zalo OAuth — hãy dán mã consent mới",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Đã forward sang %s theo yêu cầu: %q",

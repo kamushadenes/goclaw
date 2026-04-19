@@ -229,6 +229,8 @@ func init() {
 		MsgZaloOAuthInvalidChannelType: "实例不是 zalo_oauth 类型",
 		MsgZaloOAuthConnected:          "已连接 Zalo 公众号:%s",
 		MsgZaloOAuthInvalidState:       "OAuth state 令牌无效或已过期",
+		MsgZaloOAuthRefreshFailed:      "Zalo OAuth 刷新令牌失败:%s",
+		MsgZaloOAuthReauthRequired:     "需要重新授权 Zalo OAuth — 请粘贴新的同意码",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 已按请求转发至 %s:%q",

@@ -229,6 +229,8 @@ func init() {
 		MsgZaloOAuthInvalidChannelType: "instance is not a zalo_oauth channel",
 		MsgZaloOAuthConnected:          "zalo official account connected: %s",
 		MsgZaloOAuthInvalidState:       "oauth state token is invalid or expired",
+		MsgZaloOAuthRefreshFailed:      "zalo oauth token refresh failed: %s",
+		MsgZaloOAuthReauthRequired:     "zalo oauth re-authorization required — paste a new consent code",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",

@@ -3,10 +3,46 @@ package zalooauth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 )
+
+// ErrAuthExpired indicates the refresh token is no longer valid (single-use
+// rotation burned, or operator revoked the OA permission). Caller must
+// surface this to the operator and block further refreshes until re-auth.
+var ErrAuthExpired = errors.New("zalo_oauth: refresh token expired, re-auth required")
+
+// ErrNotAuthorized indicates the channel has not yet completed the
+// paste-code consent flow (no refresh token persisted). Distinct from
+// ErrAuthExpired: this is a "not started" state, not a failure — health
+// reporting should stay Degraded (awaiting consent), not Failed.
+var ErrNotAuthorized = errors.New("zalo_oauth: not yet authorized (paste consent code first)")
+
+// classifyRefreshError maps a refresh-call error to either ErrAuthExpired
+// (final, requires operator action) or returns the original error (transient,
+// safe to retry on the next ticker cycle).
+//
+// Match is conservative: only the OAuth-standard "invalid_grant" token or
+// the literal "expired" word in the Zalo envelope escalates to ErrAuthExpired.
+// Generic words like "invalid app_id" or "invalid parameter" stay transient
+// (those would mean operator misconfiguration, not refresh-token death — we
+// don't want one bad config push to permanently sideline the channel).
+func classifyRefreshError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		msg := strings.ToLower(apiErr.Message)
+		if strings.Contains(msg, "invalid_grant") || strings.Contains(msg, "expired") {
+			return fmt.Errorf("%w (zalo error %d: %s)", ErrAuthExpired, apiErr.Code, apiErr.Message)
+		}
+	}
+	return err
+}
 
 // Tokens is the parsed OAuth response.
 type Tokens struct {
