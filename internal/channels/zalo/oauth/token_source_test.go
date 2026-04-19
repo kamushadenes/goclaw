@@ -234,6 +234,35 @@ func TestAccess_AuthExpiredMarksFailedAndReturnsErr(t *testing.T) {
 	}
 }
 
+// ForceRefresh: zero out ExpiresAt under mu so next Access triggers refresh
+// even when the cached token would otherwise still be considered fresh.
+// Used by Send's retry-once-on-auth path (phase 03).
+func TestForceRefresh_ClearsCache(t *testing.T) {
+	t.Parallel()
+	srv, count := newRefreshServer(t, "")
+	fs := &fakeStore{}
+
+	// Plenty of time left — without ForceRefresh, Access would skip refresh.
+	ts := newTokenSourceForTest(t, srv.URL, time.Now().Add(time.Hour), fs)
+
+	// Pre-flight: confirm fresh token doesn't refresh.
+	if _, err := ts.Access(context.Background()); err != nil {
+		t.Fatalf("Access(fresh): %v", err)
+	}
+	if n := atomic.LoadInt32(count); n != 0 {
+		t.Errorf("expected 0 refresh calls before ForceRefresh, got %d", n)
+	}
+
+	// Force, then Access — must hit upstream.
+	ts.ForceRefresh()
+	if _, err := ts.Access(context.Background()); err != nil {
+		t.Fatalf("Access(post-force): %v", err)
+	}
+	if n := atomic.LoadInt32(count); n != 1 {
+		t.Errorf("ForceRefresh did not trigger refresh: count = %d, want 1", n)
+	}
+}
+
 func TestClassifyRefreshError(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

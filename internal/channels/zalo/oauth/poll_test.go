@@ -314,6 +314,64 @@ func TestPersistCursor_PreservesOperatorConfigKeys(t *testing.T) {
 	}
 }
 
+// AllowlistEnforcement: pollOnce → dispatchInbound → BaseChannel.HandleMessage
+// must drop messages from senders not on cfg.AllowFrom when the allowlist is
+// non-empty. Empty allowlist = allow-all (verified separately by phase-04 audit).
+func TestPollOnce_AllowlistBlocksNonAllowedSender(t *testing.T) {
+	t.Parallel()
+	ps := newPollServer(t, pollServerOpts{
+		listResp: `{"error":0,"data":[
+			{"user_id":"allowed","last_message_time":1000},
+			{"user_id":"blocked","last_message_time":2000}
+		]}`,
+		conv: map[string]string{
+			"allowed": `{"error":0,"data":[
+				{"message_id":"m-ok","user_id":"allowed","from_id":"allowed","time":1000,"text":"hi from allowed"}
+			]}`,
+			"blocked": `{"error":0,"data":[
+				{"message_id":"m-block","user_id":"blocked","from_id":"blocked","time":2000,"text":"hi from blocked"}
+			]}`,
+		},
+	})
+	// Set allowlist to only "allowed". newPollChannel uses cfg.AllowFrom=nil
+	// (allow all), so we construct manually here.
+	creds := &ChannelCreds{
+		AppID: "app", SecretKey: "key", OAID: "oa-1",
+		AccessToken: "AT", RefreshToken: "RT", ExpiresAt: time.Now().Add(time.Hour),
+	}
+	cfg := config.ZaloOAuthConfig{
+		AppID: "app", SecretKey: "key",
+		AllowFrom: config.FlexibleStringSlice{"allowed"},
+	}
+	msgBus := bus.New()
+	c, err := New("allowlist_test", cfg, creds, &fakeStore{}, msgBus, nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	c.SetInstanceID(uuid.New())
+	c.client.apiBase = ps.srv.URL
+
+	if err := c.pollOnce(context.Background()); err != nil {
+		t.Fatalf("pollOnce: %v", err)
+	}
+	// Drain bus.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	msg, ok := msgBus.ConsumeInbound(ctx)
+	if !ok {
+		t.Fatal("expected one inbound from allowed sender")
+	}
+	if msg.SenderID != "allowed" || msg.Content != "hi from allowed" {
+		t.Errorf("unexpected msg: sender=%q content=%q", msg.SenderID, msg.Content)
+	}
+	// Confirm no second message (the blocked one) arrives.
+	ctx2, cancel2 := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel2()
+	if extra, ok := msgBus.ConsumeInbound(ctx2); ok {
+		t.Errorf("blocked sender slipped through allowlist: sender=%q content=%q", extra.SenderID, extra.Content)
+	}
+}
+
 // dispatchInbound must drop messages with empty Text even when type=="text"
 // (e.g., a sticker mis-tagged as text wouldn't have body content). Otherwise
 // HandleMessage receives empty content and downstream agents see noise.

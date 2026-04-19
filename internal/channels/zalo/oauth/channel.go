@@ -103,6 +103,24 @@ func (c *Channel) SetInstanceID(id uuid.UUID) {
 	c.tokens.instanceID = id
 }
 
+// SetTestEndpointsForTest overrides the OAuth + API hosts. ONLY for use by
+// integration tests that drive the channel against an httptest server.
+// Production code paths construct the Client with default endpoints.
+func (c *Channel) SetTestEndpointsForTest(oauthBase, apiBase string) {
+	if oauthBase != "" {
+		c.client.oauthBase = oauthBase
+	}
+	if apiBase != "" {
+		c.client.apiBase = apiBase
+	}
+}
+
+// ForceRefreshForTest exposes tokenSource.ForceRefresh for integration tests
+// that need to bypass the in-memory cache and hit the upstream refresh path.
+func (c *Channel) ForceRefreshForTest() {
+	c.tokens.ForceRefresh()
+}
+
 // Type returns the channel type identifier.
 func (c *Channel) Type() string { return channels.TypeZaloOAuth }
 
