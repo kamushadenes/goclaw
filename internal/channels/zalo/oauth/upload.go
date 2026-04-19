@@ -11,9 +11,12 @@ import (
 
 const maxFilenameLen = 200 // Zalo's observed cap
 
+// Upload endpoints live on /v2.0/* (empirically verified 2026-04-20
+// against live Zalo OA — v3.0 variants return 404). The message-send
+// endpoint /v3.0/oa/message/cs stays on v3.0.
 const (
-	uploadImagePath = "/v3.0/oa/upload/image"
-	uploadFilePath  = "/v3.0/oa/upload/file"
+	uploadImagePath = "/v2.0/oa/upload/image"
+	uploadFilePath  = "/v2.0/oa/upload/file"
 )
 
 // uploadImage uploads raw image bytes to Zalo and returns the upload `token`

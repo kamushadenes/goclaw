@@ -24,7 +24,7 @@ import (
 // newAPIServer returns an httptest server that captures every request in
 // requests[] and replies with the body for that index. The server uses the
 // path as a discriminator: /v3.0/oa/message/cs returns the next item from
-// `messageReplies`; /v3.0/oa/upload/image and /upload/file return uploadReply.
+// `messageReplies`; /v2.0/oa/upload/image and /upload/file return uploadReply.
 type apiServerOpts struct {
 	messageReplies []string // consumed FIFO per /message/cs call
 	uploadReply    string   // returned for any /upload/* call
@@ -87,7 +87,7 @@ func newAPIServer(t *testing.T, opts apiServerOpts) (*httptest.Server, *[]captur
 		captured = append(captured, req)
 
 		// Route response.
-		if strings.HasPrefix(r.URL.Path, "/v3.0/oa/upload/") {
+		if strings.HasPrefix(r.URL.Path, "/v2.0/oa/upload/") {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(opts.uploadReply))
 			return
@@ -277,7 +277,7 @@ func TestSendImage_UploadsThenAttaches(t *testing.T) {
 		t.Fatalf("captured %d, want 2 (upload + send)", len(*captured))
 	}
 	upload := (*captured)[0]
-	if upload.path != "/v3.0/oa/upload/image" {
+	if upload.path != "/v2.0/oa/upload/image" {
 		t.Errorf("upload path = %q", upload.path)
 	}
 	if upload.multipart == nil {
@@ -320,7 +320,7 @@ func TestSendFile_UploadsThenAttaches(t *testing.T) {
 		t.Errorf("mid = %q", mid)
 	}
 	upload := (*captured)[0]
-	if upload.path != "/v3.0/oa/upload/file" {
+	if upload.path != "/v2.0/oa/upload/file" {
 		t.Errorf("upload path = %q", upload.path)
 	}
 	if upload.multipart.fileName != "report.pdf" {
@@ -355,25 +355,25 @@ func TestChannelSend_DispatchByContentType(t *testing.T) {
 		{
 			name:        "image/png → upload/image",
 			media:       []bus.MediaAttachment{{ContentType: "image/png"}},
-			wantUpload:  "/v3.0/oa/upload/image",
+			wantUpload:  "/v2.0/oa/upload/image",
 			wantMsgPath: "/v3.0/oa/message/cs",
 		},
 		{
 			name:        "image/jpeg → upload/image",
 			media:       []bus.MediaAttachment{{ContentType: "image/jpeg"}},
-			wantUpload:  "/v3.0/oa/upload/image",
+			wantUpload:  "/v2.0/oa/upload/image",
 			wantMsgPath: "/v3.0/oa/message/cs",
 		},
 		{
 			name:        "application/pdf → upload/file",
 			media:       []bus.MediaAttachment{{ContentType: "application/pdf"}},
-			wantUpload:  "/v3.0/oa/upload/file",
+			wantUpload:  "/v2.0/oa/upload/file",
 			wantMsgPath: "/v3.0/oa/message/cs",
 		},
 		{
 			name:        "empty content-type with .png URL → upload/image",
 			media:       []bus.MediaAttachment{{ContentType: ""}}, // URL .png filled in by test
-			wantUpload:  "/v3.0/oa/upload/image",
+			wantUpload:  "/v2.0/oa/upload/image",
 			wantMsgPath: "/v3.0/oa/message/cs",
 		},
 	}
