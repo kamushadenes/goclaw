@@ -49,7 +49,6 @@ type Channel struct {
 	// Polling state (phase 04).
 	cursor       *pollCursor
 	pollInterval time.Duration
-	topKThreads  int
 	pollWG       sync.WaitGroup
 
 	// safetyTickerInterval is exposed for tests; production uses defaultSafetyTickerInterval
@@ -75,7 +74,6 @@ func New(name string, cfg config.ZaloOAuthConfig, creds *ChannelCreds,
 	if cfg.MediaMaxMB <= 0 {
 		cfg.MediaMaxMB = defaultMediaMaxMB
 	}
-	topK := defaultTopKThreads
 	c := &Channel{
 		BaseChannel:          channels.NewBaseChannel(name, msgBus, []string(cfg.AllowFrom)),
 		client:               NewClient(defaultClientTimeout),
@@ -84,7 +82,6 @@ func New(name string, cfg config.ZaloOAuthConfig, creds *ChannelCreds,
 		cfg:                  cfg,
 		cursor:               newPollCursor(defaultCursorMaxEntries),
 		pollInterval:         pollIntervalFromCfg(cfg.PollIntervalSeconds),
-		topKThreads:          topK,
 		safetyTickerInterval: tickerInterval(cfg.SafetyTickerMinutes),
 		stopCh:               make(chan struct{}),
 	}

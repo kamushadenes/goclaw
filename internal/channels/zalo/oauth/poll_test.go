@@ -2,12 +2,9 @@ package zalooauth
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,19 +16,19 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 )
 
-// pollServer simulates the GET /v3.0/oa/listrecentchat + /conversation
-// endpoints. Tests configure the canned responses; the server captures
-// per-path call counts and the user_id query for conversation calls.
+// pollServer simulates the GET /v2.0/oa/listrecentchat endpoint. Tests
+// configure the canned body; the server captures call count for
+// assertions. listrecentchat returns MESSAGES directly (verified against
+// live Zalo API via the developer API explorer, 2026-04-20) so there's
+// no separate /conversation endpoint to mock.
 type pollServerOpts struct {
-	listResp string            // body for /listrecentchat
-	conv     map[string]string // user_id -> body for /conversation
-	status   int               // override status code (0 = 200)
+	listResp string // body for /listrecentchat
+	status   int    // override status code (0 = 200)
 }
 
 type pollServer struct {
-	srv      *httptest.Server
-	listN    atomic.Int32
-	convCall sync.Map // user_id (string) -> count (atomic.Int32 ptr)
+	srv   *httptest.Server
+	listN atomic.Int32
 }
 
 func newPollServer(t *testing.T, opts pollServerOpts) *pollServer {
@@ -42,11 +39,6 @@ func newPollServer(t *testing.T, opts pollServerOpts) *pollServer {
 		if status == 0 {
 			status = http.StatusOK
 		}
-		// Parse ?data={json} (v2.0 convention) to extract user_id for /getconversation routing.
-		var params map[string]any
-		if d := r.URL.Query().Get("data"); d != "" {
-			_ = json.Unmarshal([]byte(d), &params)
-		}
 		switch r.URL.Path {
 		case "/v2.0/oa/listrecentchat":
 			ps.listN.Add(1)
@@ -54,30 +46,12 @@ func newPollServer(t *testing.T, opts pollServerOpts) *pollServer {
 			if opts.listResp != "" {
 				_, _ = w.Write([]byte(opts.listResp))
 			}
-		case "/v2.0/oa/conversation":
-			uid, _ := params["user_id"].(string)
-			cnt, _ := ps.convCall.LoadOrStore(uid, &atomic.Int32{})
-			cnt.(*atomic.Int32).Add(1)
-			w.WriteHeader(status)
-			if body, ok := opts.conv[uid]; ok {
-				_, _ = w.Write([]byte(body))
-			} else {
-				_, _ = w.Write([]byte(`{"error":0,"data":[]}`))
-			}
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	t.Cleanup(ps.srv.Close)
 	return ps
-}
-
-func (p *pollServer) ConvCallsFor(uid string) int32 {
-	v, ok := p.convCall.Load(uid)
-	if !ok {
-		return 0
-	}
-	return v.(*atomic.Int32).Load()
 }
 
 // newPollChannel wires a Channel for poll tests. Use t.Cleanup to Stop()
@@ -110,14 +84,11 @@ func newPollChannel(t *testing.T, ps *pollServer, oaID string) (*Channel, *bus.M
 func TestPollOnce_FetchesThreadsAndPublishesInbound(t *testing.T) {
 	t.Parallel()
 	ps := newPollServer(t, pollServerOpts{
-		listResp: `{"error":0,"data":[
-			{"user_id":"u1","last_message_time":1000,"last_message":"hi"}
+		// listrecentchat returns MESSAGES directly (not thread summaries).
+		// Zalo's actual field is `message`, not `text`.
+		listResp: `{"error":0,"message":"Success","data":[
+			{"message_id":"m1","from_id":"u1","to_id":"oa-1","time":1000,"message":"hi","type":"text","from_display_name":"Alice"}
 		]}`,
-		conv: map[string]string{
-			"u1": `{"error":0,"data":[
-				{"message_id":"m1","user_id":"u1","from_id":"u1","time":1000,"text":"hi","type":"text"}
-			]}`,
-		},
 	})
 	c, msgBus := newPollChannel(t, ps, "oa-1")
 
@@ -153,13 +124,10 @@ func TestPollOnce_FetchesThreadsAndPublishesInbound(t *testing.T) {
 func TestPollOnce_FiltersOAEchoMessages(t *testing.T) {
 	t.Parallel()
 	ps := newPollServer(t, pollServerOpts{
-		listResp: `{"error":0,"data":[{"user_id":"u1","last_message_time":1000}]}`,
-		conv: map[string]string{
-			"u1": `{"error":0,"data":[
-				{"message_id":"oa-echo","user_id":"u1","from_id":"oa-1","time":900,"text":"my own outbound","type":"text"},
-				{"message_id":"real","user_id":"u1","from_id":"u1","time":1000,"text":"user reply","type":"text"}
-			]}`,
-		},
+		listResp: `{"error":0,"data":[
+			{"message_id":"oa-echo","from_id":"oa-1","to_id":"u1","time":900,"message":"my own outbound","type":"text"},
+			{"message_id":"real","from_id":"u1","to_id":"oa-1","time":1000,"message":"user reply","type":"text"}
+		]}`,
 	})
 	c, msgBus := newPollChannel(t, ps, "oa-1")
 
@@ -188,12 +156,9 @@ func TestPollOnce_FiltersOAEchoMessages(t *testing.T) {
 func TestPollOnce_CursorPreventsDuplicate(t *testing.T) {
 	t.Parallel()
 	ps := newPollServer(t, pollServerOpts{
-		listResp: `{"error":0,"data":[{"user_id":"u1","last_message_time":1000}]}`,
-		conv: map[string]string{
-			"u1": `{"error":0,"data":[
-				{"message_id":"m1","user_id":"u1","from_id":"u1","time":1000,"text":"hi"}
-			]}`,
-		},
+		listResp: `{"error":0,"data":[
+			{"message_id":"m1","from_id":"u1","time":1000,"message":"hi","type":"text"}
+		]}`,
 	})
 	c, msgBus := newPollChannel(t, ps, "oa-1")
 
@@ -222,51 +187,11 @@ func TestPollOnce_CursorPreventsDuplicate(t *testing.T) {
 	}
 }
 
-// TopK: when the list returns more than TopKThreads new threads, only
-// TopKThreads conversations get fetched in one cycle.
-func TestPollOnce_TopKThreadsCap(t *testing.T) {
-	t.Parallel()
-	const topK = 3
-	const totalThreads = 7
-
-	// Build list response with `totalThreads` threads.
-	body := `{"error":0,"data":[`
-	for i := 0; i < totalThreads; i++ {
-		if i > 0 {
-			body += ","
-		}
-		body += fmt.Sprintf(`{"user_id":"u%d","last_message_time":%d}`, i, 1000+i)
-	}
-	body += `]}`
-
-	conv := map[string]string{}
-	for i := 0; i < totalThreads; i++ {
-		conv[fmt.Sprintf("u%d", i)] = `{"error":0,"data":[]}`
-	}
-
-	ps := newPollServer(t, pollServerOpts{listResp: body, conv: conv})
-	c, _ := newPollChannel(t, ps, "oa-1")
-	c.topKThreads = topK // override via test seam
-
-	if err := c.pollOnce(context.Background()); err != nil {
-		t.Fatalf("pollOnce: %v", err)
-	}
-
-	// Sum of conversation calls across all users should equal topK.
-	var totalConvCalls int32
-	for i := 0; i < totalThreads; i++ {
-		totalConvCalls += ps.ConvCallsFor(fmt.Sprintf("u%d", i))
-	}
-	if totalConvCalls != topK {
-		t.Errorf("conversation calls = %d, want %d (top-K cap broken)", totalConvCalls, topK)
-	}
-}
-
 // HaltOnReauth: when health is Failed/Auth, pollOnce skips the API entirely.
 func TestPollOnce_HaltsWhenAuthFailed(t *testing.T) {
 	t.Parallel()
 	ps := newPollServer(t, pollServerOpts{
-		listResp: `{"error":0,"data":[{"user_id":"u1","last_message_time":1000}]}`,
+		listResp: `{"error":0,"data":[{"message_id":"m1","from_id":"u1","time":1000,"message":"hi","type":"text"}]}`,
 	})
 	c, _ := newPollChannel(t, ps, "oa-1")
 	c.MarkFailed("re-auth required", "test-only", channels.ChannelFailureKindAuth, false)
@@ -327,17 +252,9 @@ func TestPollOnce_AllowlistBlocksNonAllowedSender(t *testing.T) {
 	t.Parallel()
 	ps := newPollServer(t, pollServerOpts{
 		listResp: `{"error":0,"data":[
-			{"user_id":"allowed","last_message_time":1000},
-			{"user_id":"blocked","last_message_time":2000}
+			{"message_id":"m-ok","from_id":"allowed","time":1000,"message":"hi from allowed","type":"text"},
+			{"message_id":"m-block","from_id":"blocked","time":2000,"message":"hi from blocked","type":"text"}
 		]}`,
-		conv: map[string]string{
-			"allowed": `{"error":0,"data":[
-				{"message_id":"m-ok","user_id":"allowed","from_id":"allowed","time":1000,"text":"hi from allowed"}
-			]}`,
-			"blocked": `{"error":0,"data":[
-				{"message_id":"m-block","user_id":"blocked","from_id":"blocked","time":2000,"text":"hi from blocked"}
-			]}`,
-		},
 	})
 	// Set allowlist to only "allowed". newPollChannel uses cfg.AllowFrom=nil
 	// (allow all), so we construct manually here.
@@ -384,12 +301,9 @@ func TestPollOnce_AllowlistBlocksNonAllowedSender(t *testing.T) {
 func TestDispatchInbound_EmptyTextDropped(t *testing.T) {
 	t.Parallel()
 	ps := newPollServer(t, pollServerOpts{
-		listResp: `{"error":0,"data":[{"user_id":"u1","last_message_time":1000}]}`,
-		conv: map[string]string{
-			"u1": `{"error":0,"data":[
-				{"message_id":"empty","user_id":"u1","from_id":"u1","time":1000,"text":"","type":"text"}
-			]}`,
-		},
+		listResp: `{"error":0,"data":[
+			{"message_id":"empty","from_id":"u1","time":1000,"message":"","type":"text"}
+		]}`,
 	})
 	c, msgBus := newPollChannel(t, ps, "oa-1")
 
