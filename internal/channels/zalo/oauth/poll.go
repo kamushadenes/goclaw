@@ -97,7 +97,21 @@ func (c *Channel) pollOnce(ctx context.Context) error {
 
 	threads, err := c.listRecentChat(ctx, 0, listRecentChatCount)
 	if err != nil {
-		return err
+		// Mirror Channel.post's retry-once-on-auth: if Zalo returns an
+		// auth-class error (token revoked externally or clock-skewed),
+		// ForceRefresh and try once more. Token lifetime is supposed to
+		// be 24h but operators have seen early revocation with -155
+		// "Access token has expired".
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.isAuth() {
+			slog.Warn("zalo_oauth.poll.token_rejected_forcing_refresh",
+				"oa_id", c.creds.OAID, "zalo_code", apiErr.Code, "zalo_msg", apiErr.Message)
+			c.tokens.ForceRefresh()
+			threads, err = c.listRecentChat(ctx, 0, listRecentChatCount)
+		}
+		if err != nil {
+			return err
+		}
 	}
 
 	// Process newest-first so the top-K cap keeps the freshest threads.
