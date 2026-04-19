@@ -8,7 +8,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,8 +32,9 @@ type apiServerOpts struct {
 
 type capturedRequest struct {
 	path        string
-	query       string // including access_token
+	query       string
 	contentType string
+	accessToken string // from the `access_token` header (Zalo's auth convention)
 	body        []byte
 	multipart   *capturedMultipart
 }
@@ -56,6 +56,7 @@ func newAPIServer(t *testing.T, opts apiServerOpts) (*httptest.Server, *[]captur
 			path:        r.URL.Path,
 			query:       r.URL.RawQuery,
 			contentType: r.Header.Get("Content-Type"),
+			accessToken: r.Header.Get("access_token"),
 		}
 
 		if strings.HasPrefix(req.contentType, "multipart/") {
@@ -158,9 +159,8 @@ func TestSendText_HappyPath(t *testing.T) {
 	if r.path != "/v3.0/oa/message/cs" {
 		t.Errorf("path = %q", r.path)
 	}
-	q, _ := url.ParseQuery(r.query)
-	if q.Get("access_token") != "AT-current" {
-		t.Errorf("access_token query = %q, want AT-current", q.Get("access_token"))
+	if r.accessToken != "AT-current" {
+		t.Errorf("access_token header = %q, want AT-current", r.accessToken)
 	}
 	if !strings.HasPrefix(r.contentType, "application/json") {
 		t.Errorf("content-type = %q", r.contentType)
@@ -206,10 +206,10 @@ func TestSendText_AuthErrorRetriesOnce(t *testing.T) {
 	if len(*captured) != 2 {
 		t.Fatalf("captured %d requests, want 2", len(*captured))
 	}
-	q1, _ := url.ParseQuery((*captured)[0].query)
-	q2, _ := url.ParseQuery((*captured)[1].query)
-	if q1.Get("access_token") == q2.Get("access_token") {
-		t.Errorf("retry used same token %q (refresh should have rotated it)", q1.Get("access_token"))
+	tok1 := (*captured)[0].accessToken
+	tok2 := (*captured)[1].accessToken
+	if tok1 == tok2 {
+		t.Errorf("retry used same token %q (refresh should have rotated it)", tok1)
 	}
 }
 

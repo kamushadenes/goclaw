@@ -79,51 +79,53 @@ func (e *APIError) isAuth() bool {
 }
 
 // apiGet performs GET apiBase+path with extra query params merged. Token
-// rides as `?access_token=...` (Zalo convention). Same envelope handling
-// as apiPost: 4xx becomes APIError when body parses, otherwise raw http
-// status. 429 is bubbled as ErrRateLimit so callers can switch into backoff.
+// rides in the `access_token` HEADER (the query-param form is NOT accepted
+// by Zalo OA OpenAPI in practice; live endpoints 404 on that style).
+// Surfaces 429 as ErrRateLimit so callers can switch into backoff.
 func (c *Client) apiGet(ctx context.Context, path string, query url.Values, accessToken string) (json.RawMessage, error) {
 	if accessToken == "" {
 		return nil, fmt.Errorf("zalo_oauth: empty access_token for %s", path)
 	}
-	q := url.Values{}
-	for k, v := range query {
-		q[k] = v
+	u := c.apiBase + path
+	if len(query) > 0 {
+		u += "?" + query.Encode()
 	}
-	q.Set("access_token", accessToken)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiBase+path+"?"+q.Encode(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request %s: %w", path, err)
 	}
+	req.Header.Set("access_token", accessToken)
 	return c.do(req, path)
 }
 
-// apiPost POSTs application/json to apiBase+path with the access token in
-// the URL query param `?access_token=...` (Zalo convention, NOT a header).
-// Surfaces both HTTP-status errors and Zalo's in-body error envelope.
+// apiPost POSTs application/json to apiBase+path with the access token
+// in the `access_token` HEADER. Same envelope handling as apiGet.
 //
 // Logging note: only `path` is included in error messages — never the full
-// URL (which contains the token).
+// URL (defence-in-depth even though the token is no longer in the URL).
 func (c *Client) apiPost(ctx context.Context, path string, body any, accessToken string) (json.RawMessage, error) {
+	if accessToken == "" {
+		return nil, fmt.Errorf("zalo_oauth: empty access_token for %s", path)
+	}
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("marshal body: %w", err)
 	}
-	u, err := c.urlWithToken(path, accessToken)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiBase+path, bytes.NewReader(jsonBody))
 	if err != nil {
 		return nil, fmt.Errorf("build request %s: %w", path, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("access_token", accessToken)
 	return c.do(req, path)
 }
 
 // apiPostMultipart uploads a single file as multipart/form-data with the
-// given form fields. Used by upload/image and upload/file endpoints.
+// given form fields. Token is header-carried; same convention as apiPost.
 func (c *Client) apiPostMultipart(ctx context.Context, path string, fileFieldName, fileName string, fileBytes []byte, fields map[string]string, accessToken string) (json.RawMessage, error) {
+	if accessToken == "" {
+		return nil, fmt.Errorf("zalo_oauth: empty access_token for %s", path)
+	}
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 
@@ -143,29 +145,16 @@ func (c *Client) apiPostMultipart(ctx context.Context, path string, fileFieldNam
 		return nil, fmt.Errorf("close multipart: %w", err)
 	}
 
-	u, err := c.urlWithToken(path, accessToken)
-	if err != nil {
-		return nil, err
-	}
 	// Use a per-request client with the longer upload timeout instead of
 	// mutating the shared client.
 	uploadClient := &http.Client{Timeout: uploadTimeout}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, &buf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.apiBase+path, &buf)
 	if err != nil {
 		return nil, fmt.Errorf("build upload request %s: %w", path, err)
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("access_token", accessToken)
 	return doRequest(uploadClient, req, path)
-}
-
-// urlWithToken builds the full URL with the access_token query param.
-// Returns an error if accessToken is empty (refusing to call without auth).
-func (c *Client) urlWithToken(path, accessToken string) (string, error) {
-	if accessToken == "" {
-		return "", fmt.Errorf("zalo_oauth: empty access_token for %s", path)
-	}
-	q := url.Values{"access_token": {accessToken}}
-	return c.apiBase + path + "?" + q.Encode(), nil
 }
 
 // do runs req against the shared http client and parses the envelope.

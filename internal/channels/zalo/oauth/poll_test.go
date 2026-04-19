@@ -2,6 +2,7 @@ package zalooauth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -41,15 +42,20 @@ func newPollServer(t *testing.T, opts pollServerOpts) *pollServer {
 		if status == 0 {
 			status = http.StatusOK
 		}
+		// Parse ?data={json} (v2.0 convention) to extract user_id for /getconversation routing.
+		var params map[string]any
+		if d := r.URL.Query().Get("data"); d != "" {
+			_ = json.Unmarshal([]byte(d), &params)
+		}
 		switch r.URL.Path {
-		case "/v3.0/oa/listrecentchat":
+		case "/v2.0/oa/getlistrecentchat":
 			ps.listN.Add(1)
 			w.WriteHeader(status)
 			if opts.listResp != "" {
 				_, _ = w.Write([]byte(opts.listResp))
 			}
-		case "/v3.0/oa/conversation":
-			uid := r.URL.Query().Get("user_id")
+		case "/v2.0/oa/getconversation":
+			uid, _ := params["user_id"].(string)
 			cnt, _ := ps.convCall.LoadOrStore(uid, &atomic.Int32{})
 			cnt.(*atomic.Int32).Add(1)
 			w.WriteHeader(status)

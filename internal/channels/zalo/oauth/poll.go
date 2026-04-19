@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/url"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
@@ -34,16 +33,19 @@ type message struct {
 }
 
 // listRecentChat fetches the most-recent threads. Bounded by `count`.
+// Zalo OA v2.0 legacy read endpoints encode GET params as a single JSON
+// blob in the `data` query parameter (e.g. ?data={"offset":0,"count":10}).
 func (c *Channel) listRecentChat(ctx context.Context, offset, count int) ([]thread, error) {
 	tok, err := c.tokens.Access(ctx)
 	if err != nil {
 		return nil, err
 	}
-	q := url.Values{
-		"offset": {strconv.Itoa(offset)},
-		"count":  {strconv.Itoa(count)},
+	data, err := json.Marshal(map[string]int{"offset": offset, "count": count})
+	if err != nil {
+		return nil, fmt.Errorf("zalo_oauth: marshal listrecentchat params: %w", err)
 	}
-	raw, err := c.client.apiGet(ctx, "/v3.0/oa/listrecentchat", q, tok)
+	q := url.Values{"data": {string(data)}}
+	raw, err := c.client.apiGet(ctx, "/v2.0/oa/getlistrecentchat", q, tok)
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +64,12 @@ func (c *Channel) getConversation(ctx context.Context, userID string, offset, co
 	if err != nil {
 		return nil, err
 	}
-	q := url.Values{
-		"user_id": {userID},
-		"offset":  {strconv.Itoa(offset)},
-		"count":   {strconv.Itoa(count)},
+	data, err := json.Marshal(map[string]any{"user_id": userID, "offset": offset, "count": count})
+	if err != nil {
+		return nil, fmt.Errorf("zalo_oauth: marshal getconversation params: %w", err)
 	}
-	raw, err := c.client.apiGet(ctx, "/v3.0/oa/conversation", q, tok)
+	q := url.Values{"data": {string(data)}}
+	raw, err := c.client.apiGet(ctx, "/v2.0/oa/getconversation", q, tok)
 	if err != nil {
 		return nil, err
 	}
