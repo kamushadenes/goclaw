@@ -79,6 +79,7 @@ const (
 	TypeTelegram     = "telegram"
 	TypeWhatsApp     = "whatsapp"
 	TypeZaloOA       = "zalo_oa"
+	TypeZaloOAuth    = "zalo_oauth"
 	TypeZaloPersonal = "zalo_personal"
 )
 

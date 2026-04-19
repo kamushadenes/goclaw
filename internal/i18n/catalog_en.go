@@ -224,6 +224,12 @@ func init() {
 		MsgHookPerTurnCapReached:       "hook invocation per-turn cap reached",
 		MsgHookBuiltinReadOnly:         "builtin hooks are read-only except for the enabled toggle",
 
+		// Zalo OA OAuth channel
+		MsgZaloOAuthCodeExchangeFailed: "zalo oauth code exchange failed: %s",
+		MsgZaloOAuthInvalidChannelType: "instance is not a zalo_oauth channel",
+		MsgZaloOAuthConnected:          "zalo official account connected: %s",
+		MsgZaloOAuthInvalidState:       "oauth state token is invalid or expired",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",
 	})

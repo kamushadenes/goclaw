@@ -224,6 +224,12 @@ func init() {
 		MsgHookPerTurnCapReached:       "单轮钩子调用次数已达上限",
 		MsgHookBuiltinReadOnly:         "内置钩子只读,仅允许切换启用状态",
 
+		// Zalo OA OAuth 渠道
+		MsgZaloOAuthCodeExchangeFailed: "Zalo OAuth 授权码交换失败:%s",
+		MsgZaloOAuthInvalidChannelType: "实例不是 zalo_oauth 类型",
+		MsgZaloOAuthConnected:          "已连接 Zalo 公众号:%s",
+		MsgZaloOAuthInvalidState:       "OAuth state 令牌无效或已过期",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 已按请求转发至 %s:%q",
 	})

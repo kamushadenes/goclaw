@@ -18,6 +18,7 @@ type ChannelsConfig struct {
 	Slack             SlackConfig              `json:"slack"`
 	WhatsApp          WhatsAppConfig           `json:"whatsapp"`
 	Zalo              ZaloConfig               `json:"zalo"`
+	ZaloOAuth         ZaloOAuthConfig          `json:"zalo_oauth"`
 	ZaloPersonal      ZaloPersonalConfig       `json:"zalo_personal"`
 	Feishu            FeishuConfig             `json:"feishu"`
 	PendingCompaction *PendingCompactionConfig `json:"pending_compaction,omitempty"` // global pending message compaction settings
@@ -151,6 +152,23 @@ type ZaloConfig struct {
 	WebhookSecret string              `json:"webhook_secret,omitempty"`
 	MediaMaxMB    int                 `json:"media_max_mb,omitempty"` // default 5
 	BlockReply    *bool               `json:"block_reply,omitempty"`  // override gateway block_reply (nil = inherit)
+}
+
+// ZaloOAuthConfig configures the phone-number-tied Official Account
+// channel that uses Zalo OAuth v4 (oauth.zaloapp.com). Distinct from
+// ZaloConfig (static-token Bot OA) and ZaloPersonalConfig (QR personal).
+type ZaloOAuthConfig struct {
+	Enabled              bool                `json:"enabled"`
+	AppID                string              `json:"app_id"`
+	SecretKey            string              `json:"secret_key"` // env-overridable; never log
+	OAID                 string              `json:"oa_id"`
+	PollIntervalSeconds  int                 `json:"poll_interval_seconds,omitempty"`  // default 15
+	RefreshMarginSeconds int                 `json:"refresh_margin_seconds,omitempty"` // default 300
+	SafetyTickerMinutes  int                 `json:"safety_ticker_minutes,omitempty"`  // default 30
+	AllowFrom            FlexibleStringSlice `json:"allow_from,omitempty"`
+	DMPolicy             string              `json:"dm_policy,omitempty"`
+	MediaMaxMB           int                 `json:"media_max_mb,omitempty"`
+	BlockReply           *bool               `json:"block_reply,omitempty"`
 }
 
 type ZaloPersonalConfig struct {

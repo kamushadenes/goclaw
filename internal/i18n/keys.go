@@ -228,4 +228,10 @@ const (
 	MsgHookBudgetExceeded          = "hook.budget_exceeded"           // "tenant hook token budget exceeded"
 	MsgHookPerTurnCapReached       = "hook.per_turn_cap_reached"      // "hook invocation per-turn cap reached"
 	MsgHookBuiltinReadOnly         = "hook.builtin_readonly"          // "builtin hooks are read-only except for the enabled toggle"
+
+	// --- Zalo OA OAuth channel ---
+	MsgZaloOAuthCodeExchangeFailed = "error.zalo_oauth_code_exchange_failed" // "zalo oauth code exchange failed: %s"
+	MsgZaloOAuthInvalidChannelType = "error.zalo_oauth_invalid_channel_type" // "instance is not a zalo_oauth channel"
+	MsgZaloOAuthConnected          = "info.zalo_oauth_connected"             // "zalo official account connected: %s"
+	MsgZaloOAuthInvalidState       = "error.zalo_oauth_invalid_state"        // "oauth state token is invalid or expired"
 )

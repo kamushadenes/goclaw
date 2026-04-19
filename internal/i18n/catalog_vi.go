@@ -224,6 +224,12 @@ func init() {
 		MsgHookPerTurnCapReached:       "đã đạt giới hạn số lần gọi hook trong một lượt",
 		MsgHookBuiltinReadOnly:         "hook dựng sẵn chỉ cho phép bật/tắt, không thể chỉnh sửa",
 
+		// Zalo OA OAuth channel
+		MsgZaloOAuthCodeExchangeFailed: "đổi mã xác thực Zalo OAuth thất bại: %s",
+		MsgZaloOAuthInvalidChannelType: "kênh không phải loại zalo_oauth",
+		MsgZaloOAuthConnected:          "đã kết nối tài khoản Zalo OA: %s",
+		MsgZaloOAuthInvalidState:       "mã state OAuth không hợp lệ hoặc đã hết hạn",
+
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Đã forward sang %s theo yêu cầu: %q",
 	})

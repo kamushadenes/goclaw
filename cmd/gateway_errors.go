@@ -95,6 +95,7 @@ func isExternalChannel(channelType string) bool {
 		channels.TypeFeishu,
 		channels.TypeWhatsApp,
 		channels.TypeZaloOA,
+		channels.TypeZaloOAuth,
 		channels.TypeZaloPersonal,
 		channels.TypePancake,
 		channels.TypeSlack:
