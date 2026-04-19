@@ -22,8 +22,13 @@ import (
 )
 
 const (
-	zaloOAuthStateTTL    = 10 * time.Minute
-	zaloOAuthRedirectURI = "https://oa.local/zalo_oauth_callback" // user pastes code; URI is a placeholder
+	zaloOAuthStateTTL = 10 * time.Minute
+	// zaloOAuthDefaultRedirectURI is used only when the instance's creds
+	// don't carry one. Zalo enforces redirect_uri match against the
+	// dev-console-registered callback (error_code=-14003), so this
+	// placeholder is never going to work in practice — operators MUST
+	// set creds.redirect_uri to their registered callback.
+	zaloOAuthDefaultRedirectURI = "https://oa.local/zalo_oauth_callback"
 )
 
 // ZaloOAuthMethods serves the WS handlers backing the paste-code consent flow.
@@ -93,7 +98,11 @@ func (m *ZaloOAuthMethods) handleConsentURL(ctx context.Context, client *gateway
 	}
 	m.putState(instID, state)
 
-	url := zalooauth.ConsentURL(creds.AppID, zaloOAuthRedirectURI, state)
+	redirectURI := creds.RedirectURI
+	if redirectURI == "" {
+		redirectURI = zaloOAuthDefaultRedirectURI
+	}
+	url := zalooauth.ConsentURL(creds.AppID, redirectURI, state)
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 		"url":   url,
 		"state": state,

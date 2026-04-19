@@ -19,9 +19,16 @@ import (
 // inside the channel_instances.credentials BLOB. The store layer encrypts
 // the entire blob — do NOT call crypto.Encrypt/Decrypt on individual fields.
 type ChannelCreds struct {
-	AppID         string    `json:"app_id"`
-	SecretKey     string    `json:"secret_key"`
-	OAID          string    `json:"oa_id,omitempty"`
+	AppID     string `json:"app_id"`
+	SecretKey string `json:"secret_key"`
+	OAID      string `json:"oa_id,omitempty"`
+
+	// RedirectURI must match the callback URL registered on the Zalo dev
+	// console. Zalo returns error_code=-14003 "Invalid redirect uri" if
+	// these don't match. Operator-set per instance — pick any URL you have
+	// registered (a static "copy the code" page works fine).
+	RedirectURI string `json:"redirect_uri,omitempty"`
+
 	AccessToken   string    `json:"access_token,omitempty"`
 	RefreshToken  string    `json:"refresh_token,omitempty"`
 	ExpiresAt     time.Time `json:"expires_at,omitempty"`

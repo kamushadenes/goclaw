@@ -72,6 +72,7 @@ export const credentialsSchema: Record<string, FieldDef[]> = {
   zalo_oauth: [
     { key: "app_id", label: "App ID", type: "text", required: true, placeholder: "1234567890", help: "From the Zalo OA developer console" },
     { key: "secret_key", label: "Secret Key", type: "password", required: true, help: "OAuth v4 secret. Stored encrypted at rest." },
+    { key: "redirect_uri", label: "Redirect URI", type: "text", required: true, placeholder: "https://your-app.com/zalo-callback", help: "MUST match the callback URL registered on the Zalo dev console (Settings → OAuth → Callback). Zalo returns error_code=-14003 'Invalid redirect uri' if these don't match. A static page that just shows the URL bar is enough — you'll copy the `code` query param manually." },
     { key: "oa_id", label: "OA ID", type: "text", required: false, help: "Auto-discovered after first successful Connect. Leave blank on create." },
   ],
   zalo_personal: [],
