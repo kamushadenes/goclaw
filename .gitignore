@@ -1,6 +1,9 @@
 # Test artifacts
 tests/integration/testdata/
 
+# Local-only scratch journals (never committed)
+docs/journals/
+
 # Binary
 openclaw-go
 pkg-helper
