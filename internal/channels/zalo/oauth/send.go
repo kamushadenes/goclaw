@@ -62,20 +62,16 @@ func (c *Channel) SendText(ctx context.Context, userID, text string) (string, er
 // SendImage uploads an image and posts an attachment message. mime must
 // be "image/jpeg" or "image/png" — used to pick the multipart filename
 // extension which Zalo uses to validate the payload type.
+//
+// Zalo's send endpoint wants the template/media payload shape for
+// image attachments (simple {"type":"image","payload":{"attachment_id"}}
+// returns -201 Params is invalid).
 func (c *Channel) SendImage(ctx context.Context, userID string, data []byte, mime string) (string, error) {
 	tok, err := c.uploadImage(ctx, data, mime)
 	if err != nil {
 		return "", err
 	}
-	body := map[string]any{
-		"recipient": map[string]any{"user_id": userID},
-		"message": map[string]any{
-			"attachment": map[string]any{
-				"type":    "image",
-				"payload": map[string]any{"attachment_id": tok},
-			},
-		},
-	}
+	body := buildMediaAttachmentBody(userID, "image", tok)
 	mid, err := c.post(ctx, sendMessagePath, body)
 	if err == nil {
 		slog.Info("zalo_oauth.sent", "type", "image", "message_id", mid, "oa_id", c.creds.OAID)
@@ -94,22 +90,35 @@ func (c *Channel) SendGIF(ctx context.Context, userID string, data []byte) (stri
 	if err != nil {
 		return "", err
 	}
-	// GIFs ride as type=image per Zalo's SDK convention; the upload
-	// token is sufficient for the player to recognize animation.
-	body := map[string]any{
-		"recipient": map[string]any{"user_id": userID},
-		"message": map[string]any{
-			"attachment": map[string]any{
-				"type":    "image",
-				"payload": map[string]any{"attachment_id": tok},
-			},
-		},
-	}
+	// GIFs use the same template/media shape as images with media_type "gif".
+	body := buildMediaAttachmentBody(userID, "gif", tok)
 	mid, err := c.post(ctx, sendMessagePath, body)
 	if err == nil {
 		slog.Info("zalo_oauth.sent", "type", "gif", "message_id", mid, "oa_id", c.creds.OAID)
 	}
 	return mid, err
+}
+
+// buildMediaAttachmentBody constructs the template/media payload shape
+// Zalo expects for image + gif attachments sent via /v3.0/oa/message/cs.
+// Verified against nh4ttruong/zalo-oa-api-wrapper + the -201 "Params is
+// invalid" error that simpler shapes trigger.
+func buildMediaAttachmentBody(userID, mediaType, attachmentID string) map[string]any {
+	return map[string]any{
+		"recipient": map[string]any{"user_id": userID},
+		"message": map[string]any{
+			"attachment": map[string]any{
+				"type": "template",
+				"payload": map[string]any{
+					"template_type": "media",
+					"elements": []map[string]any{{
+						"media_type":    mediaType,
+						"attachment_id": attachmentID,
+					}},
+				},
+			},
+		},
+	}
 }
 
 // SendFile uploads a file and posts an attachment message. filename is

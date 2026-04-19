@@ -295,11 +295,24 @@ func TestSendImage_UploadsThenAttaches(t *testing.T) {
 	msg, _ := body["message"].(map[string]any)
 	att, _ := msg["attachment"].(map[string]any)
 	payload, _ := att["payload"].(map[string]any)
-	if att["type"] != "image" {
-		t.Errorf("attachment.type = %v", att["type"])
+	// Zalo's template/media shape: {"type":"template","payload":{
+	//   "template_type":"media","elements":[{"media_type":"image","attachment_id":"..."}]}}
+	if att["type"] != "template" {
+		t.Errorf("attachment.type = %v, want template", att["type"])
 	}
-	if payload["attachment_id"] != "img-tok-abc" {
-		t.Errorf("payload.attachment_id = %v", payload["attachment_id"])
+	if payload["template_type"] != "media" {
+		t.Errorf("payload.template_type = %v, want media", payload["template_type"])
+	}
+	elements, _ := payload["elements"].([]any)
+	if len(elements) != 1 {
+		t.Fatalf("elements = %v, want 1 entry", elements)
+	}
+	elem := elements[0].(map[string]any)
+	if elem["media_type"] != "image" {
+		t.Errorf("elements[0].media_type = %v, want image", elem["media_type"])
+	}
+	if elem["attachment_id"] != "img-tok-abc" {
+		t.Errorf("elements[0].attachment_id = %v", elem["attachment_id"])
 	}
 }
 
