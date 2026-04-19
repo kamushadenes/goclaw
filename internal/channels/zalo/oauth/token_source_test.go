@@ -40,6 +40,11 @@ func (f *fakeStore) Update(_ context.Context, _ uuid.UUID, updates map[string]an
 			f.lastBlob = b
 		}
 	}
+	if v, ok := updates["config"]; ok {
+		if b, ok := v.([]byte); ok {
+			f.lastBlob = b
+		}
+	}
 	return nil
 }
 

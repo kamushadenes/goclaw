@@ -46,6 +46,12 @@ type Channel struct {
 
 	tokens *tokenSource
 
+	// Polling state (phase 04).
+	cursor       *pollCursor
+	pollInterval time.Duration
+	topKThreads  int
+	pollWG       sync.WaitGroup
+
 	// safetyTickerInterval is exposed for tests; production uses defaultSafetyTickerInterval
 	// or cfg.SafetyTickerMinutes.
 	safetyTickerInterval time.Duration
@@ -69,12 +75,16 @@ func New(name string, cfg config.ZaloOAuthConfig, creds *ChannelCreds,
 	if cfg.MediaMaxMB <= 0 {
 		cfg.MediaMaxMB = defaultMediaMaxMB
 	}
+	topK := defaultTopKThreads
 	c := &Channel{
 		BaseChannel:          channels.NewBaseChannel(name, msgBus, []string(cfg.AllowFrom)),
 		client:               NewClient(defaultClientTimeout),
 		creds:                creds,
 		ciStore:              ciStore,
 		cfg:                  cfg,
+		cursor:               newPollCursor(defaultCursorMaxEntries),
+		pollInterval:         pollIntervalFromCfg(cfg.PollIntervalSeconds),
+		topKThreads:          topK,
 		safetyTickerInterval: tickerInterval(cfg.SafetyTickerMinutes),
 		stopCh:               make(chan struct{}),
 	}
@@ -111,13 +121,21 @@ func (c *Channel) Start(_ context.Context) error {
 
 	c.tickerWG.Add(1)
 	go c.runSafetyTicker()
+	c.pollWG.Add(1)
+	// Use Background so the loop survives the caller's ctx cancel; Stop()
+	// is the canonical exit signal. The loop wraps each cycle in a per-tick
+	// ctx so individual API calls still honor a timeout.
+	go c.runPollLoop(context.Background())
 	return nil
 }
 
-// Stop signals the ticker to exit and waits for it. Idempotent.
+// Stop signals both ticker + poll loop to exit and waits for them.
+// Best-effort cursor flush happens inside runPollLoop's exit path.
+// Idempotent.
 func (c *Channel) Stop(_ context.Context) error {
 	c.stopOnce.Do(func() { close(c.stopCh) })
 	c.tickerWG.Wait()
+	c.pollWG.Wait()
 	c.SetRunning(false)
 	slog.Info("zalo_oauth.stopped", "name", c.Name())
 	return nil

@@ -239,4 +239,5 @@ const (
 	MsgZaloOAuthTokenInvalid       = "error.zalo_oauth_token_invalid"        // "zalo oauth access token rejected by API"
 	MsgZaloOAuthMediaTooLarge      = "error.zalo_oauth_media_too_large"      // "media exceeds size limit (%d MB)"
 	MsgZaloOAuthWindowExpired      = "error.zalo_oauth_window_expired"       // "48-hour user-interaction window expired"
+	MsgZaloOAuthRateLimited        = "warn.zalo_oauth_rate_limited"          // "zalo oauth rate limited; backing off"
 )

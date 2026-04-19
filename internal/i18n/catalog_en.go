@@ -234,6 +234,7 @@ func init() {
 		MsgZaloOAuthTokenInvalid:       "zalo oauth access token rejected by API",
 		MsgZaloOAuthMediaTooLarge:      "media exceeds size limit (%d MB)",
 		MsgZaloOAuthWindowExpired:      "48-hour user-interaction window expired — recipient must message the OA first",
+		MsgZaloOAuthRateLimited:        "zalo oauth rate limited; backing off polling for 30 seconds",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",

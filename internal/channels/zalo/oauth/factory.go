@@ -35,6 +35,15 @@ func Factory(ciStore store.ChannelInstanceStore) channels.ChannelFactory {
 			}
 		}
 
-		return New(name, cfg, creds, ciStore, msgBus, pairingSvc)
+		ch, err := New(name, cfg, creds, ciStore, msgBus, pairingSvc)
+		if err != nil {
+			return nil, err
+		}
+		// Seed the in-memory poll cursor from any persisted state in
+		// channel_instances.config.poll_cursor (phase-04 persistence).
+		if seeded := parseCursorFromConfig(cfgRaw); len(seeded) > 0 {
+			ch.cursor.loadFromMap(seeded)
+		}
+		return ch, nil
 	}
 }

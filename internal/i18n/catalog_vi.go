@@ -234,6 +234,7 @@ func init() {
 		MsgZaloOAuthTokenInvalid:       "API Zalo từ chối access token",
 		MsgZaloOAuthMediaTooLarge:      "tệp đính kèm vượt quá giới hạn (%d MB)",
 		MsgZaloOAuthWindowExpired:      "đã quá cửa sổ tương tác 48 giờ — người dùng cần nhắn cho OA trước",
+		MsgZaloOAuthRateLimited:        "Zalo OAuth bị giới hạn tốc độ; tạm dừng polling 30 giây",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Đã forward sang %s theo yêu cầu: %q",

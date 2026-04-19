@@ -45,6 +45,10 @@ func NewClient(timeout time.Duration) *Client {
 	}
 }
 
+// ErrRateLimit indicates Zalo returned HTTP 429. Callers should back off
+// (the polling loop switches to a 30s ticker until a successful cycle).
+var ErrRateLimit = errors.New("zalo_oauth: rate limited")
+
 // APIError is returned when Zalo replies with a non-zero error envelope.
 type APIError struct {
 	Code    int    `json:"error"`
@@ -72,6 +76,26 @@ func (e *APIError) isAuth() bool {
 	}
 	msg := strings.ToLower(e.Message)
 	return strings.Contains(msg, "access_token") && (strings.Contains(msg, "invalid") || strings.Contains(msg, "expired"))
+}
+
+// apiGet performs GET apiBase+path with extra query params merged. Token
+// rides as `?access_token=...` (Zalo convention). Same envelope handling
+// as apiPost: 4xx becomes APIError when body parses, otherwise raw http
+// status. 429 is bubbled as ErrRateLimit so callers can switch into backoff.
+func (c *Client) apiGet(ctx context.Context, path string, query url.Values, accessToken string) (json.RawMessage, error) {
+	if accessToken == "" {
+		return nil, fmt.Errorf("zalo_oauth: empty access_token for %s", path)
+	}
+	q := url.Values{}
+	for k, v := range query {
+		q[k] = v
+	}
+	q.Set("access_token", accessToken)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiBase+path+"?"+q.Encode(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("build request %s: %w", path, err)
+	}
+	return c.do(req, path)
 }
 
 // apiPost POSTs application/json to apiBase+path with the access token in
@@ -169,6 +193,9 @@ func doRequest(client *http.Client, req *http.Request, path string) (json.RawMes
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
+	}
+	if resp.StatusCode == http.StatusTooManyRequests {
+		return nil, fmt.Errorf("%w (path=%s)", ErrRateLimit, path)
 	}
 	if resp.StatusCode >= 400 {
 		var env APIError
