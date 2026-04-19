@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ExternalLink, Copy, Check } from "lucide-react";
 import {
   Dialog,
@@ -10,9 +11,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWsCall } from "@/hooks/use-ws-call";
-
-// TODO i18n: phase-07 will replace hard-coded English strings with i18n keys.
-// For now we ship literals so the build stays clean (per phase-06 plan §Risk).
 
 interface ZaloOAuthPasteCodeDialogProps {
   open: boolean;
@@ -40,6 +38,7 @@ export function ZaloOAuthPasteCodeDialog({
   instanceName,
   onSuccess,
 }: ZaloOAuthPasteCodeDialogProps) {
+  const { t } = useTranslation("channels");
   const consent = useWsCall<ConsentResp>("channels.instances.zalo_oauth.consent_url");
   const exchange = useWsCall<ExchangeResp>("channels.instances.zalo_oauth.exchange_code");
 
@@ -124,29 +123,29 @@ export function ZaloOAuthPasteCodeDialog({
     <Dialog open={open} onOpenChange={(v) => { if (!submitting) onOpenChange(v); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Connect Zalo OA — {instanceName}</DialogTitle>
-          <DialogDescription>
-            Authorize the Official Account, then paste the code returned by Zalo.
-          </DialogDescription>
+          <DialogTitle>{t("zaloOauth.dialogTitle", { name: instanceName })}</DialogTitle>
+          <DialogDescription>{t("zaloOauth.dialogDescription")}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-5 py-2">
           {/* Step 1 — Consent */}
           <section className="space-y-2">
-            <h3 className="text-sm font-medium">Step 1 — Authorize</h3>
+            <h3 className="text-sm font-medium">{t("zaloOauth.step1Heading")}</h3>
             {loadingConsent && (
-              <p className="text-sm text-muted-foreground">Generating consent URL…</p>
+              <p className="text-sm text-muted-foreground">{t("zaloOauth.consentLoading")}</p>
             )}
             {consent.error && (
-              <p className="text-sm text-destructive">{consent.error.message ?? "Failed to fetch consent URL"}</p>
+              <p className="text-sm text-destructive">
+                {consent.error.message ?? t("zaloOauth.consentFailed")}
+              </p>
             )}
             {url && (
               <div className="flex items-center gap-2">
                 <Input value={url} readOnly className="text-xs" />
-                <Button type="button" variant="outline" size="sm" onClick={handleCopy} aria-label="Copy URL">
+                <Button type="button" variant="outline" size="sm" onClick={handleCopy} aria-label={t("zaloOauth.copyUrl")}>
                   {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 </Button>
-                <Button type="button" variant="outline" size="sm" onClick={handleOpenInTab} aria-label="Open in new tab">
+                <Button type="button" variant="outline" size="sm" onClick={handleOpenInTab} aria-label={t("zaloOauth.openInTab")}>
                   <ExternalLink className="h-4 w-4" />
                 </Button>
               </div>
@@ -155,32 +154,32 @@ export function ZaloOAuthPasteCodeDialog({
 
           {/* Step 2 — Paste code */}
           <section className="space-y-2">
-            <h3 className="text-sm font-medium">Step 2 — Paste authorization code</h3>
-            <p className="text-xs text-muted-foreground">
-              After approving, Zalo redirects to a placeholder page; copy the <code>code</code> query parameter from the URL bar and paste it below.
-            </p>
+            <h3 className="text-sm font-medium">{t("zaloOauth.step2Heading")}</h3>
+            <p className="text-xs text-muted-foreground">{t("zaloOauth.pasteHelp")}</p>
             <Input
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="authorization_code from Zalo redirect"
+              placeholder={t("zaloOauth.pastePlaceholder")}
               disabled={submitting || done}
               autoFocus
             />
             {exchange.error && (
-              <p className="text-sm text-destructive">{exchange.error.message ?? "Code exchange failed"}</p>
+              <p className="text-sm text-destructive">
+                {exchange.error.message ?? t("zaloOauth.exchangeFailed")}
+              </p>
             )}
             {done && (
-              <p className="text-sm text-green-600 font-medium">Connected — closing…</p>
+              <p className="text-sm text-green-600 font-medium">{t("zaloOauth.connectedClosing")}</p>
             )}
           </section>
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Cancel
+            {t("zaloOauth.cancel")}
           </Button>
           <Button onClick={handleSubmit} disabled={!code.trim() || !state || submitting || done}>
-            {submitting ? "Connecting…" : "Connect"}
+            {submitting ? t("zaloOauth.connecting") : t("zaloOauth.connect")}
           </Button>
         </div>
       </DialogContent>

@@ -497,5 +497,22 @@
     "relinkDevice": "Re-link Device",
     "connectedSuccess": "✅ WhatsApp connected successfully!",
     "tabQrCode": "QR Code"
+  },
+  "zaloOauth": {
+    "dialogTitle": "Connect Zalo OA — {{name}}",
+    "dialogDescription": "Authorize the Official Account, then paste the code returned by Zalo.",
+    "step1Heading": "Step 1 — Authorize",
+    "step2Heading": "Step 2 — Paste authorization code",
+    "consentLoading": "Generating consent URL…",
+    "consentFailed": "Failed to fetch consent URL",
+    "pasteHelp": "After approving, Zalo redirects to a placeholder page; copy the `code` query parameter from the URL bar and paste it below.",
+    "pastePlaceholder": "authorization_code from Zalo redirect",
+    "exchangeFailed": "Code exchange failed",
+    "connectedClosing": "Connected — closing…",
+    "copyUrl": "Copy URL",
+    "openInTab": "Open in new tab",
+    "cancel": "Cancel",
+    "connect": "Connect",
+    "connecting": "Connecting…"
   }
 }

@@ -412,5 +412,22 @@
     "relinkDevice": "Liên kết lại",
     "connectedSuccess": "✅ Kết nối WhatsApp thành công!",
     "tabQrCode": "Mã QR"
+  },
+  "zaloOauth": {
+    "dialogTitle": "Kết nối Zalo OA — {{name}}",
+    "dialogDescription": "Cấp quyền cho Official Account, sau đó dán mã do Zalo trả về.",
+    "step1Heading": "Bước 1 — Cấp quyền",
+    "step2Heading": "Bước 2 — Dán mã xác thực",
+    "consentLoading": "Đang tạo URL cấp quyền…",
+    "consentFailed": "Không thể lấy URL cấp quyền",
+    "pasteHelp": "Sau khi đồng ý, Zalo sẽ chuyển hướng đến trang placeholder; sao chép tham số `code` từ thanh URL và dán vào ô bên dưới.",
+    "pastePlaceholder": "authorization_code từ chuyển hướng Zalo",
+    "exchangeFailed": "Đổi mã thất bại",
+    "connectedClosing": "Đã kết nối — đang đóng…",
+    "copyUrl": "Sao chép URL",
+    "openInTab": "Mở trong tab mới",
+    "cancel": "Hủy",
+    "connect": "Kết nối",
+    "connecting": "Đang kết nối…"
   }
 }

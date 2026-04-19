@@ -412,5 +412,22 @@
     "relinkDevice": "重新连接",
     "connectedSuccess": "✅ WhatsApp 连接成功！",
     "tabQrCode": "二维码"
+  },
+  "zaloOauth": {
+    "dialogTitle": "连接 Zalo OA — {{name}}",
+    "dialogDescription": "授权官方账号,然后粘贴 Zalo 返回的代码。",
+    "step1Heading": "步骤 1 — 授权",
+    "step2Heading": "步骤 2 — 粘贴授权码",
+    "consentLoading": "正在生成授权 URL…",
+    "consentFailed": "无法获取授权 URL",
+    "pasteHelp": "授权后,Zalo 会重定向到占位页;从地址栏复制 `code` 查询参数并粘贴到下面。",
+    "pastePlaceholder": "Zalo 重定向中的 authorization_code",
+    "exchangeFailed": "代码交换失败",
+    "connectedClosing": "已连接 — 正在关闭…",
+    "copyUrl": "复制 URL",
+    "openInTab": "在新标签页中打开",
+    "cancel": "取消",
+    "connect": "连接",
+    "connecting": "连接中…"
   }
 }
