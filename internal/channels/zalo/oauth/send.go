@@ -11,6 +11,19 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 )
 
+// isZaloSupportedFileMIME reports whether mime is one of the document
+// formats Zalo's /v2.0/oa/upload/file endpoint accepts: PDF, DOC, DOCX.
+// Other types must not be sent via that endpoint — Zalo silently rejects.
+func isZaloSupportedFileMIME(mime string) bool {
+	switch strings.ToLower(strings.TrimSpace(mime)) {
+	case "application/pdf",
+		"application/msword",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		return true
+	}
+	return false
+}
+
 // isMIMEDenied reports whether mime is in the admin-configured deny list.
 // Match is case-insensitive and exact (no glob/prefix). Empty list = allow all.
 func isMIMEDenied(mime string, deny config.FlexibleStringSlice) bool {
@@ -67,6 +80,35 @@ func (c *Channel) SendImage(ctx context.Context, userID string, data []byte, _ s
 	mid, err := c.post(ctx, sendMessagePath, body)
 	if err == nil {
 		slog.Info("zalo_oauth.sent", "type", "image", "message_id", mid, "oa_id", c.creds.OAID)
+	}
+	return mid, err
+}
+
+// SendGIF uploads animated-GIF bytes to Zalo's dedicated gif endpoint
+// and posts an image-attachment message referencing the upload token.
+// Zalo caps /upload/gif at 5MB (callers should enforce before calling).
+func (c *Channel) SendGIF(ctx context.Context, userID string, data []byte) (string, error) {
+	if len(data) == 0 {
+		return "", errors.New("zalo_oauth: refusing to send empty gif")
+	}
+	tok, err := c.uploadGIF(ctx, data)
+	if err != nil {
+		return "", err
+	}
+	// GIFs ride as type=image per Zalo's SDK convention; the upload
+	// token is sufficient for the player to recognize animation.
+	body := map[string]any{
+		"recipient": map[string]any{"user_id": userID},
+		"message": map[string]any{
+			"attachment": map[string]any{
+				"type":    "image",
+				"payload": map[string]any{"token": tok},
+			},
+		},
+	}
+	mid, err := c.post(ctx, sendMessagePath, body)
+	if err == nil {
+		slog.Info("zalo_oauth.sent", "type", "gif", "message_id", mid, "oa_id", c.creds.OAID)
 	}
 	return mid, err
 }

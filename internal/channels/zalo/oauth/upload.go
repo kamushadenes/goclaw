@@ -17,6 +17,7 @@ const maxFilenameLen = 200 // Zalo's observed cap
 const (
 	uploadImagePath = "/v2.0/oa/upload/image"
 	uploadFilePath  = "/v2.0/oa/upload/file"
+	uploadGIFPath   = "/v2.0/oa/upload/gif"
 )
 
 // uploadImage uploads raw image bytes to Zalo and returns the upload `token`
@@ -27,6 +28,20 @@ func (c *Channel) uploadImage(ctx context.Context, data []byte) (string, error) 
 		return "", err
 	}
 	raw, err := c.client.apiPostMultipart(ctx, uploadImagePath, "file", "image", data, nil, tok)
+	if err != nil {
+		return "", err
+	}
+	return parseUploadToken(raw)
+}
+
+// uploadGIF uploads animated-GIF bytes to Zalo's dedicated gif endpoint
+// (cap 5MB) and returns the upload token for the subsequent send call.
+func (c *Channel) uploadGIF(ctx context.Context, data []byte) (string, error) {
+	tok, err := c.tokens.Access(ctx)
+	if err != nil {
+		return "", err
+	}
+	raw, err := c.client.apiPostMultipart(ctx, uploadGIFPath, "file", "image.gif", data, nil, tok)
 	if err != nil {
 		return "", err
 	}

@@ -447,23 +447,27 @@ func TestChannelSend_MediaTooLarge(t *testing.T) {
 		uploadReply: `{"error":0,"data":{"token":"tok"}}`,
 	})
 	refresh, _ := newRefreshServer(t, "")
-	c := newSendChannel(t, api, refresh, &fakeStore{}) // MediaMaxMB=1
+	c := newSendChannel(t, api, refresh, &fakeStore{})
 
+	// PDF >5MB — routes to SendFile path and must be rejected for exceeding
+	// Zalo's /v2.0/oa/upload/file cap. (Image path auto-compresses, so the
+	// size-limit test shifted to the file path where compression isn't
+	// applicable.)
 	dir := t.TempDir()
-	p := filepath.Join(dir, "big.png")
-	if err := os.WriteFile(p, make([]byte, 2<<20), 0o600); err != nil { // 2MB > 1MB limit
+	p := filepath.Join(dir, "big.pdf")
+	if err := os.WriteFile(p, make([]byte, 6<<20), 0o600); err != nil { // 6MB > 5MB Zalo cap
 		t.Fatalf("write: %v", err)
 	}
 
 	err := c.Send(context.Background(), bus.OutboundMessage{
 		ChatID: "u",
-		Media:  []bus.MediaAttachment{{URL: p, ContentType: "image/png"}},
+		Media:  []bus.MediaAttachment{{URL: p, ContentType: "application/pdf"}},
 	})
 	if err == nil {
 		t.Fatal("expected size-limit error")
 	}
-	if !strings.Contains(err.Error(), "too large") && !strings.Contains(err.Error(), "exceeds") {
-		t.Errorf("err message = %v, want 'too large'/'exceeds'", err)
+	if !strings.Contains(err.Error(), "too large") && !strings.Contains(err.Error(), "exceeds") && !strings.Contains(err.Error(), "5MB") {
+		t.Errorf("err message = %v, want 'too large'/'exceeds'/'5MB'", err)
 	}
 }
 

@@ -185,16 +185,42 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 	}
 
 	m := msg.Media[0]
-	maxBytes := int64(c.cfg.MediaMaxMB) * 1024 * 1024
-	data, mt, err := c.readMedia(m, maxBytes)
+	// Generous stat-first guard (50MB) prevents OOM on pathological paths.
+	// Per-type caps are enforced below: image auto-compresses to 1MB,
+	// file rejects if MIME isn't PDF/DOC/DOCX or >5MB.
+	data, mt, err := c.readMedia(m, 50*1024*1024)
 	if err != nil {
 		return err
 	}
 
 	var attachMID string
-	if strings.HasPrefix(mt, "image/") {
+	if mt == "image/gif" {
+		// Zalo has a dedicated /upload/gif endpoint (cap 5MB) that
+		// preserves animation. Don't re-encode GIFs as JPEG.
+		const zaloGIFCapBytes = 5 * 1024 * 1024
+		if len(data) > zaloGIFCapBytes {
+			return fmt.Errorf("zalo_oauth: gif too large: %d bytes (Zalo cap is 5MB)", len(data))
+		}
+		attachMID, err = c.SendGIF(ctx, msg.ChatID, data)
+	} else if strings.HasPrefix(mt, "image/") {
+		// Zalo upload/image caps at 1MB and only accepts jpg/png.
+		// Auto-compress oversized or non-jpg/png images to JPEG.
+		const zaloImageCapBytes = 1 * 1024 * 1024
+		compressed, newMT, cerr := compressForZaloImage(data, mt, zaloImageCapBytes)
+		if cerr != nil {
+			return cerr
+		}
+		data, mt = compressed, newMT
 		attachMID, err = c.SendImage(ctx, msg.ChatID, data, mt)
 	} else {
+		// Zalo upload/file only accepts PDF/DOC/DOCX up to 5MB.
+		const zaloFileCapBytes = 5 * 1024 * 1024
+		if !isZaloSupportedFileMIME(mt) {
+			return fmt.Errorf("zalo_oauth: file MIME %q not supported (Zalo accepts PDF, DOC, DOCX only)", mt)
+		}
+		if len(data) > zaloFileCapBytes {
+			return fmt.Errorf("zalo_oauth: file too large: %d bytes (Zalo cap is 5MB)", len(data))
+		}
 		attachMID, err = c.SendFile(ctx, msg.ChatID, data, filepath.Base(m.URL), mt)
 	}
 	if err != nil {
