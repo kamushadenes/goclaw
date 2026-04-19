@@ -308,4 +308,9 @@ export const wizardConfig: Partial<Record<string, WizardConfig>> = {
     createLabel: "wizard.whatsapp.createLabel",
     formBanner: "wizard.whatsapp.formBanner",
   },
+  zalo_oauth: {
+    steps: ["auth"],
+    createLabel: "wizard.zaloOauth.createLabel",
+    formBanner: "wizard.zaloOauth.formBanner",
+  },
 };

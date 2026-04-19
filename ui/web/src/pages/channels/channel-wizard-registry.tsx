@@ -49,6 +49,7 @@ export interface ReauthDialogProps {
 import { ZaloAuthStep, ZaloConfigStep, ZaloEditConfig } from "./zalo/zalo-wizard-steps";
 import { ZaloPersonalQRDialog } from "./zalo/zalo-personal-qr-dialog";
 import { ZaloOAuthPasteCodeDialog } from "./zalo/zalo-oauth-paste-code-dialog";
+import { ZaloOAuthAuthStep } from "./zalo/zalo-oauth-wizard-step";
 import { WhatsAppAuthStep } from "./whatsapp/whatsapp-wizard-steps";
 import { WhatsAppReauthDialog } from "./whatsapp/whatsapp-reauth-dialog";
 
@@ -56,6 +57,7 @@ import { WhatsAppReauthDialog } from "./whatsapp/whatsapp-reauth-dialog";
 
 export const wizardAuthSteps: Record<string, ComponentType<WizardAuthStepProps>> = {
   zalo_personal: ZaloAuthStep,
+  zalo_oauth: ZaloOAuthAuthStep,
   whatsapp: WhatsAppAuthStep,
 };
 

@@ -348,6 +348,10 @@
     "whatsapp": {
       "createLabel": "创建并扫码",
       "formBanner": "创建后，请用 WhatsApp 扫描二维码完成认证。"
+    },
+    "zaloOauth": {
+      "createLabel": "创建并连接",
+      "formBanner": "创建后,您将在 Zalo 中授权访问并粘贴返回的代码以完成授权。"
     }
   },
   "fallback": {

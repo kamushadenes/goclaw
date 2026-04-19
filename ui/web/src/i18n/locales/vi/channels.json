@@ -348,6 +348,10 @@
     "whatsapp": {
       "createLabel": "Tạo & Quét QR",
       "formBanner": "Sau khi tạo, quét mã QR bằng WhatsApp để xác thực."
+    },
+    "zaloOauth": {
+      "createLabel": "Tạo & Kết nối",
+      "formBanner": "Sau khi tạo, bạn sẽ cấp quyền trên Zalo và dán mã trả về để hoàn tất xác thực."
     }
   },
   "fallback": {

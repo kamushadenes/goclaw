@@ -433,6 +433,10 @@
     "whatsapp": {
       "createLabel": "Create & Scan QR",
       "formBanner": "After creating, scan the QR code with WhatsApp to authenticate."
+    },
+    "zaloOauth": {
+      "createLabel": "Create & Connect",
+      "formBanner": "After creating, you'll approve access in Zalo and paste the returned code to complete authorization."
     }
   },
   "fallback": {
