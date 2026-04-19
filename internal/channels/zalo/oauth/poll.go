@@ -45,7 +45,7 @@ func (c *Channel) listRecentChat(ctx context.Context, offset, count int) ([]thre
 		return nil, fmt.Errorf("zalo_oauth: marshal listrecentchat params: %w", err)
 	}
 	q := url.Values{"data": {string(data)}}
-	raw, err := c.client.apiGet(ctx, "/v2.0/oa/getlistrecentchat", q, tok)
+	raw, err := c.client.apiGet(ctx, "/v2.0/oa/listrecentchat", q, tok)
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +69,7 @@ func (c *Channel) getConversation(ctx context.Context, userID string, offset, co
 		return nil, fmt.Errorf("zalo_oauth: marshal getconversation params: %w", err)
 	}
 	q := url.Values{"data": {string(data)}}
-	raw, err := c.client.apiGet(ctx, "/v2.0/oa/getconversation", q, tok)
+	raw, err := c.client.apiGet(ctx, "/v2.0/oa/conversation", q, tok)
 	if err != nil {
 		return nil, err
 	}

@@ -48,13 +48,13 @@ func newPollServer(t *testing.T, opts pollServerOpts) *pollServer {
 			_ = json.Unmarshal([]byte(d), &params)
 		}
 		switch r.URL.Path {
-		case "/v2.0/oa/getlistrecentchat":
+		case "/v2.0/oa/listrecentchat":
 			ps.listN.Add(1)
 			w.WriteHeader(status)
 			if opts.listResp != "" {
 				_, _ = w.Write([]byte(opts.listResp))
 			}
-		case "/v2.0/oa/getconversation":
+		case "/v2.0/oa/conversation":
 			uid, _ := params["user_id"].(string)
 			cnt, _ := ps.convCall.LoadOrStore(uid, &atomic.Int32{})
 			cnt.(*atomic.Int32).Add(1)
