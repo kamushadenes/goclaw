@@ -291,13 +291,37 @@ func (c *Channel) skipTickIfAuthFailed() bool {
 	return snap.State == channels.ChannelHealthStateFailed && snap.FailureKind == channels.ChannelFailureKindAuth
 }
 
-// markAuthFailedIfNeeded transitions health to Failed/Auth on ErrAuthExpired.
+// markAuthFailedIfNeeded transitions health to Failed/Auth on any auth-
+// class error. Two shapes qualify:
+//
+//   - ErrAuthExpired: raised by the tokenSource refresh path when Zalo
+//     rejects the refresh token itself (refresh-token dead).
+//   - *APIError where isAuth() is true: raised by the poll path when
+//     a listrecentchat call 401/-216s AFTER the retry-once-on-auth
+//     ForceRefresh attempt. At that point the refresh token is likely
+//     still valid but the OA-app association is broken and the operator
+//     must re-consent.
+//
+// ErrNotAuthorized (pre-consent stub state) is intentionally NOT
+// escalated — the safety ticker already skips that case.
 func (c *Channel) markAuthFailedIfNeeded(err error) {
+	if err == nil {
+		return
+	}
 	if errors.Is(err, ErrAuthExpired) {
 		c.MarkFailed("Re-auth required",
 			"Zalo refresh token expired or invalid; operator must re-paste consent code",
 			channels.ChannelFailureKindAuth,
-			false, // not retryable by automation
+			false,
+		)
+		return
+	}
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.isAuth() {
+		c.MarkFailed("Re-auth required",
+			fmt.Sprintf("Zalo API rejected access_token after refresh retry (code %d: %s)", apiErr.Code, apiErr.Message),
+			channels.ChannelFailureKindAuth,
+			false,
 		)
 	}
 }

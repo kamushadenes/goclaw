@@ -50,6 +50,11 @@ func (c *Channel) runPollLoop(parentCtx context.Context) {
 				}
 			case err != nil:
 				slog.Warn("zalo_oauth.poll_failed", "oa_id", c.creds.OAID, "error", err)
+				// Auth-class errors that survive the in-pollOnce retry-
+				// once-on-auth mean the operator must re-consent. Flip
+				// health so the dashboard surfaces the red re-auth prompt
+				// instead of staying green while logs scream.
+				c.markAuthFailedIfNeeded(err)
 			default:
 				if rateLimited {
 					c.MarkHealthy("polling")
