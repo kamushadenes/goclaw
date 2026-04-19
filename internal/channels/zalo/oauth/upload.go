@@ -21,13 +21,20 @@ const (
 )
 
 // uploadImage uploads raw image bytes to Zalo and returns the upload `token`
-// that subsequent send-attachment calls reference.
-func (c *Channel) uploadImage(ctx context.Context, data []byte) (string, error) {
+// that subsequent send-attachment calls reference. Filename carries a real
+// extension because Zalo's endpoint uses it to validate the payload type
+// (live observation: filename without extension yields a 0-error but
+// empty-data response).
+func (c *Channel) uploadImage(ctx context.Context, data []byte, mime string) (string, error) {
 	tok, err := c.tokens.Access(ctx)
 	if err != nil {
 		return "", err
 	}
-	raw, err := c.client.apiPostMultipart(ctx, uploadImagePath, "file", "image", data, nil, tok)
+	filename := "image.jpg"
+	if mime == "image/png" {
+		filename = "image.png"
+	}
+	raw, err := c.client.apiPostMultipart(ctx, uploadImagePath, "file", filename, data, nil, tok)
 	if err != nil {
 		return "", err
 	}
@@ -83,6 +90,11 @@ func sanitizeFilename(raw string) string {
 
 // parseUploadToken extracts the `token` field from the standard upload
 // response envelope: {"error":0,"data":{"token":"..."}}
+//
+// If `data.token` is missing we include a redacted prefix of the raw
+// response in the error so the next-time triage sees what Zalo actually
+// returned instead of a generic "missing data.token". Raw bytes are
+// truncated to 500 chars to avoid log spam on large payloads.
 func parseUploadToken(raw json.RawMessage) (string, error) {
 	var env struct {
 		Data struct {
@@ -93,7 +105,11 @@ func parseUploadToken(raw json.RawMessage) (string, error) {
 		return "", fmt.Errorf("zalo_oauth: decode upload response: %w", err)
 	}
 	if env.Data.Token == "" {
-		return "", fmt.Errorf("zalo_oauth: upload response missing data.token")
+		preview := string(raw)
+		if len(preview) > 500 {
+			preview = preview[:500] + "…(truncated)"
+		}
+		return "", fmt.Errorf("zalo_oauth: upload response missing data.token (raw=%s)", preview)
 	}
 	return env.Data.Token, nil
 }

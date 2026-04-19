@@ -59,12 +59,11 @@ func (c *Channel) SendText(ctx context.Context, userID, text string) (string, er
 	return mid, err
 }
 
-// SendImage uploads an image and posts an attachment message. mime is the
-// MIME type (e.g. "image/png") — used by some implementations of upload
-// validation; Zalo's OA SDK accepts the bytes directly so we don't pass it
-// to the upload endpoint.
-func (c *Channel) SendImage(ctx context.Context, userID string, data []byte, _ string) (string, error) {
-	tok, err := c.uploadImage(ctx, data)
+// SendImage uploads an image and posts an attachment message. mime must
+// be "image/jpeg" or "image/png" — used to pick the multipart filename
+// extension which Zalo uses to validate the payload type.
+func (c *Channel) SendImage(ctx context.Context, userID string, data []byte, mime string) (string, error) {
+	tok, err := c.uploadImage(ctx, data, mime)
 	if err != nil {
 		return "", err
 	}
