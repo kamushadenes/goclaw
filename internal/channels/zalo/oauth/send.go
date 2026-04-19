@@ -6,7 +6,28 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+
+	"github.com/nextlevelbuilder/goclaw/internal/config"
 )
+
+// isMIMEDenied reports whether mime is in the admin-configured deny list.
+// Match is case-insensitive and exact (no glob/prefix). Empty list = allow all.
+func isMIMEDenied(mime string, deny config.FlexibleStringSlice) bool {
+	if len(deny) == 0 {
+		return false
+	}
+	target := strings.ToLower(strings.TrimSpace(mime))
+	if target == "" {
+		return false
+	}
+	for _, d := range deny {
+		if strings.EqualFold(strings.TrimSpace(d), target) {
+			return true
+		}
+	}
+	return false
+}
 
 // sendMessagePath is the OA customer-service message endpoint.
 const sendMessagePath = "/v3.0/oa/message/cs"
@@ -52,8 +73,15 @@ func (c *Channel) SendImage(ctx context.Context, userID string, data []byte, _ s
 
 // SendFile uploads a file and posts an attachment message. filename is
 // passed in the multipart "filename" field so Zalo preserves it for the
-// recipient.
-func (c *Channel) SendFile(ctx context.Context, userID string, data []byte, filename, _ string) (string, error) {
+// recipient. Empty payloads and admin-blocked MIME types are rejected
+// before the HTTP call.
+func (c *Channel) SendFile(ctx context.Context, userID string, data []byte, filename, mime string) (string, error) {
+	if len(data) == 0 {
+		return "", fmt.Errorf("zalo_oauth: refusing to send empty/zero-byte file %q", filename)
+	}
+	if isMIMEDenied(mime, c.cfg.FileDenyMIME) {
+		return "", fmt.Errorf("zalo_oauth: file MIME %q denied by tenant policy", mime)
+	}
 	tok, err := c.uploadFile(ctx, data, filename)
 	if err != nil {
 		return "", err

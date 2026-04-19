@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
+	"time"
 )
+
+const maxFilenameLen = 200 // Zalo's observed cap
 
 const (
 	uploadImagePath = "/v3.0/oa/upload/image"
@@ -28,19 +32,35 @@ func (c *Channel) uploadImage(ctx context.Context, data []byte) (string, error) 
 
 // uploadFile uploads a file with its original filename and returns the
 // upload token. filename is sent in the multipart "filename" field so Zalo
-// preserves it for the recipient.
+// preserves it for the recipient. Filename is sanitized — pathological
+// inputs (path traversal, dot-only, empty, oversized) get a safe fallback.
 func (c *Channel) uploadFile(ctx context.Context, data []byte, filename string) (string, error) {
 	tok, err := c.tokens.Access(ctx)
 	if err != nil {
 		return "", err
 	}
-	base := filepath.Base(filename)
-	raw, err := c.client.apiPostMultipart(ctx, uploadFilePath, "file", base,
-		data, map[string]string{"filename": base}, tok)
+	safe := sanitizeFilename(filename)
+	raw, err := c.client.apiPostMultipart(ctx, uploadFilePath, "file", safe,
+		data, map[string]string{"filename": safe}, tok)
 	if err != nil {
 		return "", err
 	}
 	return parseUploadToken(raw)
+}
+
+// sanitizeFilename strips any path component, trims whitespace, replaces
+// dot-only / empty names with a unique fallback, and caps length at 200.
+// Unicode is preserved (Zalo accepts UTF-8 filenames).
+func sanitizeFilename(raw string) string {
+	name := filepath.Base(strings.TrimSpace(raw))
+	switch name {
+	case "", ".", "..", string(filepath.Separator):
+		return fmt.Sprintf("file-%d.bin", time.Now().Unix())
+	}
+	if len(name) > maxFilenameLen {
+		name = name[:maxFilenameLen]
+	}
+	return name
 }
 
 // parseUploadToken extracts the `token` field from the standard upload
