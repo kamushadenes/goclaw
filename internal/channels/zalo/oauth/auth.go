@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -52,11 +53,31 @@ type Tokens struct {
 }
 
 // tokenResponse mirrors Zalo's OAuth v4 response body. Unknown fields
-// are tolerated (forward-compat).
+// are tolerated (forward-compat). expires_in has been observed as both
+// a number AND a quoted string ("3600") depending on the endpoint, so
+// we use flexSeconds to accept either.
 type tokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int64  `json:"expires_in"` // seconds, typically 3600
+	AccessToken  string      `json:"access_token"`
+	RefreshToken string      `json:"refresh_token"`
+	ExpiresIn    flexSeconds `json:"expires_in"`
+}
+
+// flexSeconds accepts either a JSON number (3600) or a JSON string ("3600").
+// Zalo's OA OAuth endpoint returns the latter form in practice, even though
+// the ChickenAI SDK types it as a number — belt-and-suspenders.
+type flexSeconds int64
+
+func (f *flexSeconds) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" {
+		return nil
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return fmt.Errorf("expires_in: %w", err)
+	}
+	*f = flexSeconds(n)
+	return nil
 }
 
 // ExchangeCode swaps an authorization code for an (access, refresh) token pair.

@@ -182,11 +182,21 @@ func TestExchangeCode_UnknownFieldsTolerated(t *testing.T) {
 // Compile-time guard: make sure JSON tags on response structs don't drift.
 func TestTokenResponseShape_GuardsTagDrift(t *testing.T) {
 	t.Parallel()
+	// Numeric form (ChickenAI SDK's documented shape).
 	var resp tokenResponse
 	if err := json.Unmarshal([]byte(`{"access_token":"a","refresh_token":"b","expires_in":1}`), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
+		t.Fatalf("unmarshal numeric: %v", err)
 	}
 	if resp.AccessToken != "a" || resp.RefreshToken != "b" || resp.ExpiresIn != 1 {
-		t.Errorf("tag drift: %+v", resp)
+		t.Errorf("tag drift (numeric): %+v", resp)
+	}
+
+	// String form (what Zalo's live OA endpoint actually returns as of 2026).
+	var resp2 tokenResponse
+	if err := json.Unmarshal([]byte(`{"access_token":"a","refresh_token":"b","expires_in":"3600"}`), &resp2); err != nil {
+		t.Fatalf("unmarshal string form: %v", err)
+	}
+	if resp2.ExpiresIn != 3600 {
+		t.Errorf("string form: ExpiresIn = %d, want 3600", resp2.ExpiresIn)
 	}
 }

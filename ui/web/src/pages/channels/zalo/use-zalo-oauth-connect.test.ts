@@ -1,0 +1,58 @@
+import { describe, it, expect } from "vitest";
+import { extractCode } from "./use-zalo-oauth-connect";
+
+describe("extractCode", () => {
+  const stashedState = "db8fa679f0d522a652c70b5f935348c1f01f7a82d576a5596d89c32960364fcb";
+
+  it("returns raw code when input is not a URL", () => {
+    const got = extractCode("iYPhiMZy16swCN-NG", stashedState);
+    expect(got.code).toBe("iYPhiMZy16swCN-NG");
+    expect(got.mismatchedState).toBe(false);
+  });
+
+  it("trims whitespace on raw code input", () => {
+    const got = extractCode("   iYPhiMZy   ", stashedState);
+    expect(got.code).toBe("iYPhiMZy");
+  });
+
+  it("extracts code from a real-shape Zalo callback URL", () => {
+    const url = `https://dataplanelabs.com/zalo-callback?oa_id=4245484535895825355&code=iYPhiMZy16swCN-NGUqQVi4lOfXFoX&state=${stashedState}`;
+    const got = extractCode(url, stashedState);
+    expect(got.code).toBe("iYPhiMZy16swCN-NGUqQVi4lOfXFoX");
+    expect(got.mismatchedState).toBe(false);
+  });
+
+  it("flags mismatched state when callback state != stashed", () => {
+    const url = `https://dataplanelabs.com/zalo-callback?code=abc&state=wrong-state`;
+    const got = extractCode(url, stashedState);
+    expect(got.code).toBe("abc");
+    expect(got.mismatchedState).toBe(true);
+  });
+
+  it("does NOT flag mismatch when URL has no state param", () => {
+    const url = `https://dataplanelabs.com/zalo-callback?code=abc`;
+    const got = extractCode(url, stashedState);
+    expect(got.code).toBe("abc");
+    expect(got.mismatchedState).toBe(false);
+  });
+
+  it("falls back to raw input when URL has no code param", () => {
+    // Degenerate case — operator pastes a URL without a code param.
+    // Server will reject the exchange; UI just forwards what the operator typed.
+    const url = `https://dataplanelabs.com/zalo-callback?oa_id=123`;
+    const got = extractCode(url, stashedState);
+    expect(got.code).toBe(url); // treats the whole URL as the "code"
+  });
+
+  it("handles http:// in addition to https://", () => {
+    const url = `http://localhost:5173/zalo-callback?code=local-code&state=${stashedState}`;
+    const got = extractCode(url, stashedState);
+    expect(got.code).toBe("local-code");
+  });
+
+  it("handles non-URL strings gracefully", () => {
+    const got = extractCode("not a url at all", stashedState);
+    expect(got.code).toBe("not a url at all");
+    expect(got.mismatchedState).toBe(false);
+  });
+});

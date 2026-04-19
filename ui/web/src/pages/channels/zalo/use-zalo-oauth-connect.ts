@@ -1,6 +1,36 @@
 import { useEffect, useState } from "react";
 import { useWsCall } from "@/hooks/use-ws-call";
 
+/**
+ * extractCode normalizes the paste-code input. Operators can paste either
+ * the raw `code` value or the full callback URL Zalo redirected them to
+ * (e.g. `https://your-app.com/zalo-callback?code=iYP...&state=db8...`).
+ * URL parsing runs first — if it looks like an http(s) URL with a `code`
+ * query param we pull that out; otherwise we trust the raw value.
+ *
+ * When the pasted URL also carries a `state` query, we opportunistically
+ * compare it to the one we stashed from consent_url. Mismatches are
+ * reported back so the UI can hint; the server is the authoritative
+ * validator so we don't fail the submit here.
+ */
+export function extractCode(input: string, stashedState: string): { code: string; mismatchedState: boolean } {
+  const trimmed = input.trim();
+  if (!/^https?:\/\//i.test(trimmed)) {
+    return { code: trimmed, mismatchedState: false };
+  }
+  try {
+    const u = new URL(trimmed);
+    const code = u.searchParams.get("code") ?? trimmed;
+    const state = u.searchParams.get("state") ?? "";
+    return {
+      code,
+      mismatchedState: state !== "" && stashedState !== "" && state !== stashedState,
+    };
+  } catch {
+    return { code: trimmed, mismatchedState: false };
+  }
+}
+
 // Shared state machine for the zalo_oauth paste-code consent flow. Consumed
 // by both the ReauthDialog (triggered from the row) and the WizardAuthStep
 // (auto-triggered after row creation).
@@ -107,10 +137,16 @@ export function useZaloOAuthConnect(
 
   async function handleSubmit() {
     if (!code.trim() || !state) return;
+    const { code: finalCode, mismatchedState } = extractCode(code.trim(), state);
+    if (mismatchedState) {
+      // Ignore — server still validates state. Surfacing as an explicit
+      // error would confuse operators on legit flows where Zalo mangles the
+      // redirect but still returns a valid code.
+    }
     try {
       const resp = await exchange.call({
         instance_id: instanceId,
-        code: code.trim(),
+        code: finalCode,
         state,
       });
       if (resp?.ok) setDone(true);
