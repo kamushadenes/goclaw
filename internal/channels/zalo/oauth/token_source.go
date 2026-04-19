@@ -30,6 +30,15 @@ type tokenSource struct {
 	mu sync.Mutex // guards creds.{Access,Refresh}Token + ExpiresAt + serializes refresh
 }
 
+// ForceRefresh marks the cached token as stale so the NEXT Access() call
+// performs an HTTP refresh. Used by Send when the API returns an auth-class
+// error mid-call (token rotated externally or a clock skew issue).
+func (ts *tokenSource) ForceRefresh() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.creds.ExpiresAt = time.Time{} // zero → time.Until == negative → triggers refresh
+}
+
 // Access returns a currently-valid access token, refreshing under the same
 // mutex if the cached token is within `refreshMargin` of expiry.
 func (ts *tokenSource) Access(ctx context.Context) (string, error) {

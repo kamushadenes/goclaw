@@ -231,6 +231,9 @@ func init() {
 		MsgZaloOAuthInvalidState:       "oauth state token is invalid or expired",
 		MsgZaloOAuthRefreshFailed:      "zalo oauth token refresh failed: %s",
 		MsgZaloOAuthReauthRequired:     "zalo oauth re-authorization required — paste a new consent code",
+		MsgZaloOAuthTokenInvalid:       "zalo oauth access token rejected by API",
+		MsgZaloOAuthMediaTooLarge:      "media exceeds size limit (%d MB)",
+		MsgZaloOAuthWindowExpired:      "48-hour user-interaction window expired — recipient must message the OA first",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",

@@ -3,7 +3,12 @@ package zalooauth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"mime"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,12 +20,15 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
-// ErrSendNotImplemented is returned by Send until phase 03 wires real outbound.
-var ErrSendNotImplemented = errors.New("zalo_oauth: send not implemented (wired in phase 03)")
+// ErrPartialSend signals that an attachment was delivered but the trailing
+// caption/text message failed. The attachment-side message_id is logged
+// alongside the warning; callers may use errors.Is to special-case retry.
+var ErrPartialSend = errors.New("zalo_oauth: attachment delivered but trailing text failed")
 
 const (
 	defaultClientTimeout        = 15 * time.Second
 	defaultSafetyTickerInterval = 30 * time.Minute
+	defaultMediaMaxMB           = 10 // matches plan §Non-functional; under Zalo's ~25MB undocumented ceiling
 )
 
 // Channel is the phase-02 form. Phase 03 wires Send; phase 04 wires polling.
@@ -58,6 +66,9 @@ func New(name string, cfg config.ZaloOAuthConfig, creds *ChannelCreds,
 		return nil, errors.New("zalo_oauth: app_id and secret_key are required")
 	}
 
+	if cfg.MediaMaxMB <= 0 {
+		cfg.MediaMaxMB = defaultMediaMaxMB
+	}
 	c := &Channel{
 		BaseChannel:          channels.NewBaseChannel(name, msgBus, []string(cfg.AllowFrom)),
 		client:               NewClient(defaultClientTimeout),
@@ -112,9 +123,102 @@ func (c *Channel) Stop(_ context.Context) error {
 	return nil
 }
 
-// Send is wired in phase 03.
-func (c *Channel) Send(_ context.Context, _ bus.OutboundMessage) error {
-	return ErrSendNotImplemented
+// Send dispatches an outbound message to text / image / file based on the
+// Media slice. Phase 03 supports one media element per message; additional
+// media in the slice are logged-and-skipped (Zalo OA sends one attachment
+// per message). The Media URL is treated as a local file path.
+//
+// Caption + Content alongside an attachment ride as a SEPARATE text message
+// (Zalo OA's attachment payload has no caption field). If that trailing
+// text fails after the attachment succeeded, returns ErrPartialSend so
+// callers can distinguish from a full failure.
+func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
+	if msg.ChatID == "" {
+		return errors.New("zalo_oauth: empty user_id")
+	}
+
+	if len(msg.Media) == 0 {
+		_, err := c.SendText(ctx, msg.ChatID, msg.Content)
+		return err
+	}
+	if len(msg.Media) > 1 {
+		slog.Info("zalo_oauth.send.extra_media_skipped",
+			"oa_id", c.creds.OAID, "extra", len(msg.Media)-1)
+	}
+
+	m := msg.Media[0]
+	maxBytes := int64(c.cfg.MediaMaxMB) * 1024 * 1024
+	data, mt, err := c.readMedia(m, maxBytes)
+	if err != nil {
+		return err
+	}
+
+	var attachMID string
+	if strings.HasPrefix(mt, "image/") {
+		attachMID, err = c.SendImage(ctx, msg.ChatID, data, mt)
+	} else {
+		attachMID, err = c.SendFile(ctx, msg.ChatID, data, filepath.Base(m.URL), mt)
+	}
+	if err != nil {
+		return err
+	}
+
+	trailing := mergeTrailingText(m.Caption, msg.Content)
+	if trailing == "" {
+		return nil
+	}
+	if _, terr := c.SendText(ctx, msg.ChatID, trailing); terr != nil {
+		slog.Error("zalo_oauth.send.text_after_attachment_failed",
+			"oa_id", c.creds.OAID, "user_id", msg.ChatID,
+			"attachment_message_id", attachMID, "error", terr)
+		return fmt.Errorf("%w: %v", ErrPartialSend, terr)
+	}
+	return nil
+}
+
+// mergeTrailingText joins caption + content for the post-attachment text
+// message. Each is trimmed; empties are skipped; both present are joined
+// with a blank line so the caption stands as its own paragraph.
+func mergeTrailingText(caption, content string) string {
+	caption = strings.TrimSpace(caption)
+	content = strings.TrimSpace(content)
+	switch {
+	case caption == "" && content == "":
+		return ""
+	case caption == "":
+		return content
+	case content == "":
+		return caption
+	default:
+		return caption + "\n\n" + content
+	}
+}
+
+// readMedia stat-checks the file BEFORE allocating, then reads bytes. The
+// stat-first pattern (mirrors telegram/send.go:399) prevents a 2GB malicious
+// path from OOMing the process before the size guard rejects it.
+func (c *Channel) readMedia(m bus.MediaAttachment, maxBytes int64) ([]byte, string, error) {
+	if m.URL == "" {
+		return nil, "", errors.New("zalo_oauth: media URL empty")
+	}
+	if maxBytes > 0 {
+		info, statErr := os.Stat(m.URL)
+		if statErr == nil && info.Size() > maxBytes {
+			return nil, "", fmt.Errorf("zalo_oauth: media too large: %d bytes (limit %d)", info.Size(), maxBytes)
+		}
+	}
+	data, err := os.ReadFile(m.URL)
+	if err != nil {
+		return nil, "", fmt.Errorf("zalo_oauth: read media %s: %w", m.URL, err)
+	}
+	mt := m.ContentType
+	if mt == "" {
+		mt = mime.TypeByExtension(strings.ToLower(filepath.Ext(m.URL)))
+		if mt == "" {
+			mt = "application/octet-stream"
+		}
+	}
+	return data, mt, nil
 }
 
 // runSafetyTicker calls Access() periodically so idle channels don't let

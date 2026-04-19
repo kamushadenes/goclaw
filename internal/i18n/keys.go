@@ -236,4 +236,7 @@ const (
 	MsgZaloOAuthInvalidState       = "error.zalo_oauth_invalid_state"        // "oauth state token is invalid or expired"
 	MsgZaloOAuthRefreshFailed      = "error.zalo_oauth_refresh_failed"       // "zalo oauth token refresh failed: %s"
 	MsgZaloOAuthReauthRequired     = "error.zalo_oauth_reauth_required"      // "zalo oauth re-authorization required"
+	MsgZaloOAuthTokenInvalid       = "error.zalo_oauth_token_invalid"        // "zalo oauth access token rejected by API"
+	MsgZaloOAuthMediaTooLarge      = "error.zalo_oauth_media_too_large"      // "media exceeds size limit (%d MB)"
+	MsgZaloOAuthWindowExpired      = "error.zalo_oauth_window_expired"       // "48-hour user-interaction window expired"
 )
