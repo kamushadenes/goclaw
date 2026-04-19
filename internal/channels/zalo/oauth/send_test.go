@@ -259,7 +259,7 @@ func TestSendText_NonAuthErrorNoRetry(t *testing.T) {
 func TestSendImage_UploadsThenAttaches(t *testing.T) {
 	t.Parallel()
 	api, captured, _ := newAPIServer(t, apiServerOpts{
-		uploadReply:    `{"error":0,"data":{"token":"img-tok-abc"}}`,
+		uploadReply:    `{"error":0,"data":{"attachment_id":"img-tok-abc"}}`,
 		messageReplies: []string{`{"error":0,"data":{"message_id":"mid-img"}}`},
 	})
 	refresh, _ := newRefreshServer(t, "")
@@ -298,15 +298,15 @@ func TestSendImage_UploadsThenAttaches(t *testing.T) {
 	if att["type"] != "image" {
 		t.Errorf("attachment.type = %v", att["type"])
 	}
-	if payload["token"] != "img-tok-abc" {
-		t.Errorf("payload.token = %v", payload["token"])
+	if payload["attachment_id"] != "img-tok-abc" {
+		t.Errorf("payload.attachment_id = %v", payload["attachment_id"])
 	}
 }
 
 func TestSendFile_UploadsThenAttaches(t *testing.T) {
 	t.Parallel()
 	api, captured, _ := newAPIServer(t, apiServerOpts{
-		uploadReply:    `{"error":0,"data":{"token":"file-tok-xyz"}}`,
+		uploadReply:    `{"error":0,"data":{"attachment_id":"file-tok-xyz"}}`,
 		messageReplies: []string{`{"error":0,"data":{"message_id":"mid-file"}}`},
 	})
 	refresh, _ := newRefreshServer(t, "")
@@ -381,7 +381,7 @@ func TestChannelSend_DispatchByContentType(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			api, captured, _ := newAPIServer(t, apiServerOpts{
-				uploadReply:    `{"error":0,"data":{"token":"tok"}}`,
+				uploadReply:    `{"error":0,"data":{"attachment_id":"tok"}}`,
 				messageReplies: []string{`{"error":0,"data":{"message_id":"mid"}}`},
 			})
 			refresh, _ := newRefreshServer(t, "")
@@ -444,7 +444,7 @@ func pathsOf(rs []capturedRequest) []string {
 func TestChannelSend_MediaTooLarge(t *testing.T) {
 	t.Parallel()
 	api, _, _ := newAPIServer(t, apiServerOpts{
-		uploadReply: `{"error":0,"data":{"token":"tok"}}`,
+		uploadReply: `{"error":0,"data":{"attachment_id":"tok"}}`,
 	})
 	refresh, _ := newRefreshServer(t, "")
 	c := newSendChannel(t, api, refresh, &fakeStore{})
@@ -504,7 +504,7 @@ var _ = multipart.NewWriter // silence unused import in some test builds
 func TestChannelSend_CaptionAndContentMerged(t *testing.T) {
 	t.Parallel()
 	api, captured, _ := newAPIServer(t, apiServerOpts{
-		uploadReply:    `{"error":0,"data":{"token":"T"}}`,
+		uploadReply:    `{"error":0,"data":{"attachment_id":"T"}}`,
 		messageReplies: []string{`{"error":0,"data":{"message_id":"mid-img"}}`, `{"error":0,"data":{"message_id":"mid-txt"}}`},
 	})
 	refresh, _ := newRefreshServer(t, "")
@@ -545,7 +545,7 @@ func TestChannelSend_CaptionAndContentMerged(t *testing.T) {
 func TestChannelSend_PartialSendOnTrailingTextFailure(t *testing.T) {
 	t.Parallel()
 	api, _, _ := newAPIServer(t, apiServerOpts{
-		uploadReply:    `{"error":0,"data":{"token":"T"}}`,
+		uploadReply:    `{"error":0,"data":{"attachment_id":"T"}}`,
 		messageReplies: []string{`{"error":0,"data":{"message_id":"mid-img"}}`, `{"error":-99,"message":"blocked"}`},
 	})
 	refresh, _ := newRefreshServer(t, "")

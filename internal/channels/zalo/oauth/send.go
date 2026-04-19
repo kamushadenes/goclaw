@@ -72,7 +72,7 @@ func (c *Channel) SendImage(ctx context.Context, userID string, data []byte, mim
 		"message": map[string]any{
 			"attachment": map[string]any{
 				"type":    "image",
-				"payload": map[string]any{"token": tok},
+				"payload": map[string]any{"attachment_id": tok},
 			},
 		},
 	}
@@ -101,7 +101,7 @@ func (c *Channel) SendGIF(ctx context.Context, userID string, data []byte) (stri
 		"message": map[string]any{
 			"attachment": map[string]any{
 				"type":    "image",
-				"payload": map[string]any{"token": tok},
+				"payload": map[string]any{"attachment_id": tok},
 			},
 		},
 	}
@@ -132,7 +132,7 @@ func (c *Channel) SendFile(ctx context.Context, userID string, data []byte, file
 		"message": map[string]any{
 			"attachment": map[string]any{
 				"type":    "file",
-				"payload": map[string]any{"token": tok},
+				"payload": map[string]any{"attachment_id": tok},
 			},
 		},
 	}

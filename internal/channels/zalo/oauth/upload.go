@@ -38,7 +38,7 @@ func (c *Channel) uploadImage(ctx context.Context, data []byte, mime string) (st
 	if err != nil {
 		return "", err
 	}
-	return parseUploadToken(raw)
+	return parseUploadAttachmentID(raw)
 }
 
 // uploadGIF uploads animated-GIF bytes to Zalo's dedicated gif endpoint
@@ -52,7 +52,7 @@ func (c *Channel) uploadGIF(ctx context.Context, data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return parseUploadToken(raw)
+	return parseUploadAttachmentID(raw)
 }
 
 // uploadFile uploads a file with its original filename and returns the
@@ -70,7 +70,7 @@ func (c *Channel) uploadFile(ctx context.Context, data []byte, filename string) 
 	if err != nil {
 		return "", err
 	}
-	return parseUploadToken(raw)
+	return parseUploadAttachmentID(raw)
 }
 
 // sanitizeFilename strips any path component, trims whitespace, replaces
@@ -88,28 +88,35 @@ func sanitizeFilename(raw string) string {
 	return name
 }
 
-// parseUploadToken extracts the `token` field from the standard upload
-// response envelope: {"error":0,"data":{"token":"..."}}
+// parseUploadAttachmentID extracts the attachment ID from the upload
+// response. Live Zalo returns:
 //
-// If `data.token` is missing we include a redacted prefix of the raw
-// response in the error so the next-time triage sees what Zalo actually
-// returned instead of a generic "missing data.token". Raw bytes are
-// truncated to 500 chars to avoid log spam on large payloads.
-func parseUploadToken(raw json.RawMessage) (string, error) {
+//	{"data":{"attachment_id":"1I5sCR-..."}, "error":0, "message":"Success"}
+//
+// Older community wrappers + our plan-03 called this field "token" but
+// the wire name is `attachment_id`. We accept both for defensive forward-
+// compat: if Zalo ever adds a `token` alias (or if a different endpoint
+// uses it), we still parse.
+func parseUploadAttachmentID(raw json.RawMessage) (string, error) {
 	var env struct {
 		Data struct {
-			Token string `json:"token"`
+			AttachmentID string `json:"attachment_id"`
+			Token        string `json:"token"` // legacy fallback
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return "", fmt.Errorf("zalo_oauth: decode upload response: %w", err)
 	}
-	if env.Data.Token == "" {
+	id := env.Data.AttachmentID
+	if id == "" {
+		id = env.Data.Token
+	}
+	if id == "" {
 		preview := string(raw)
 		if len(preview) > 500 {
 			preview = preview[:500] + "…(truncated)"
 		}
-		return "", fmt.Errorf("zalo_oauth: upload response missing data.token (raw=%s)", preview)
+		return "", fmt.Errorf("zalo_oauth: upload response missing data.attachment_id (raw=%s)", preview)
 	}
-	return env.Data.Token, nil
+	return id, nil
 }
