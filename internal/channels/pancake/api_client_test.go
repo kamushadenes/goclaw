@@ -372,3 +372,47 @@ func TestReactComment_RejectsInvalidIDs(t *testing.T) {
 		}
 	}
 }
+
+// --- Accept Header Tests (Shopee support) ---
+
+// TestNewPageRequest_SetsAcceptJSONHeader verifies the Pancake GET negotiation fix:
+// without Accept: application/json, Pancake returns SPA HTML for Shopee endpoints.
+func TestNewPageRequest_SetsAcceptJSONHeader(t *testing.T) {
+	client := NewAPIClient("user-token", "page-token", "spo_25409726")
+	req, err := client.newPageRequest(context.Background(), http.MethodGet,
+		"https://pages.fm/api/public_api/v2/pages/spo_25409726/conversations", nil)
+	if err != nil {
+		t.Fatalf("newPageRequest: %v", err)
+	}
+	if got := req.Header.Get("Accept"); got != "application/json" {
+		t.Fatalf("Accept header = %q, want %q", got, "application/json")
+	}
+	if got := req.Header.Get("Authorization"); got != "Bearer page-token" {
+		t.Fatalf("Authorization header = %q, want %q", got, "Bearer page-token")
+	}
+}
+
+// TestGetPage_SetsAcceptJSONHeader — C2 guard. GetPage bypasses newPageRequest
+// (it builds its own http.NewRequestWithContext for the user-API /pages endpoint).
+// Without this header, startup auto-detect receives SPA HTML for Shopee pages.
+func TestGetPage_SetsAcceptJSONHeader(t *testing.T) {
+	transport := &captureTransport{
+		resp: &http.Response{
+			StatusCode: 200,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+		},
+	}
+	client := NewAPIClient("user-token", "page-token", "spo_25409726")
+	client.httpClient = &http.Client{Transport: transport}
+
+	if _, err := client.GetPage(context.Background()); err != nil {
+		t.Fatalf("GetPage: %v", err)
+	}
+	if transport.req == nil {
+		t.Fatal("expected request to be captured")
+	}
+	if got := transport.req.Header.Get("Accept"); got != "application/json" {
+		t.Fatalf("Accept header on GetPage = %q, want %q", got, "application/json")
+	}
+}

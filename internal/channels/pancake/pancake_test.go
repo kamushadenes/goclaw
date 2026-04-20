@@ -373,25 +373,68 @@ func TestAPIClientSendMessageReturnsBodyLevelError(t *testing.T) {
 	}
 }
 
-// TestTruncateForTikTok_MultiByteCharacters verifies rune-safe truncation for
+// TestTruncateRuneSafe_MultiByteCharacters verifies rune-safe truncation for
 // Vietnamese diacritics and emoji (multi-byte UTF-8 sequences).
-func TestTruncateForTikTok_MultiByteCharacters(t *testing.T) {
+func TestTruncateRuneSafe_MultiByteCharacters(t *testing.T) {
 	// Vietnamese text with diacritics (multi-byte UTF-8)
 	input := strings.Repeat("Xin chào ", 100) // ~900 bytes, <500 runes
-	result := truncateForTikTok(input)
+	result := truncateRuneSafe(input, 500)
 	if !utf8.ValidString(result) {
-		t.Fatal("truncateForTikTok produced invalid UTF-8")
+		t.Fatal("truncateRuneSafe produced invalid UTF-8")
 	}
 
 	// Emoji string exceeding 500 runes
 	emoji := strings.Repeat("😊", 600)
-	result = truncateForTikTok(emoji)
+	result = truncateRuneSafe(emoji, 500)
 	runes := []rune(result)
 	if len(runes) > 500 {
 		t.Errorf("expected <=500 runes, got %d", len(runes))
 	}
 	if !utf8.ValidString(result) {
 		t.Fatal("emoji truncation produced invalid UTF-8")
+	}
+}
+
+// --- Shopee platform support tests (Phase 1: TDD red state) ---
+
+// TestMaxMessageLength_Shopee verifies shopee returns 500 char limit.
+func TestMaxMessageLength_Shopee(t *testing.T) {
+	ch := &Channel{platform: "shopee"}
+	if got := ch.maxMessageLength(); got != 500 {
+		t.Fatalf("shopee maxMessageLength = %d, want 500", got)
+	}
+	// Regression guards for existing platforms.
+	for _, tc := range []struct {
+		p    string
+		want int
+	}{
+		{"tiktok", 500}, {"facebook", 2000}, {"whatsapp", 4096},
+	} {
+		ch.platform = tc.p
+		if got := ch.maxMessageLength(); got != tc.want {
+			t.Fatalf("%s maxMessageLength = %d, want %d", tc.p, got, tc.want)
+		}
+	}
+}
+
+// TestTruncateRuneSafe_Shopee verifies FormatOutbound truncates shopee to 500 runes.
+// Uses Vietnamese diacritics and emoji to catch byte-vs-rune bugs.
+func TestTruncateRuneSafe_Shopee(t *testing.T) {
+	// Vietnamese text: 600 "Xin chào " iterations → >500 runes.
+	input := strings.Repeat("Xin chào ", 100)
+	out := FormatOutbound(input, "shopee")
+	if utf8.RuneCountInString(out) > 500 {
+		t.Fatalf("shopee output = %d runes, want <=500", utf8.RuneCountInString(out))
+	}
+	if !utf8.ValidString(out) {
+		t.Fatal("shopee truncation produced invalid UTF-8")
+	}
+
+	// Emoji-only input exceeding 500 runes.
+	emoji := strings.Repeat("😊", 600)
+	out = FormatOutbound(emoji, "shopee")
+	if utf8.RuneCountInString(out) > 500 {
+		t.Fatalf("emoji shopee output = %d runes, want <=500", utf8.RuneCountInString(out))
 	}
 }
 

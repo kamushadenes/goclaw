@@ -343,7 +343,7 @@ func (ch *Channel) handleAPIError(err error) {
 // maxMessageLength returns the platform-specific character limit.
 func (ch *Channel) maxMessageLength() int {
 	switch ch.platform {
-	case "tiktok":
+	case "tiktok", "shopee":
 		return 500
 	case "instagram":
 		return 1000
