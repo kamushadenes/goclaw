@@ -316,7 +316,7 @@ func (w *WebhookWorker) execute(ctx context.Context, call *store.WebhookCallData
 	var agentErrMsg string
 
 	if len(call.Response) == 0 && call.AgentID != nil {
-		out, usage, invokeErr := w.invokeAgent(ctx, call, req)
+		out, usage, invokeErr := w.invokeAgent(tctx, call, req)
 		if invokeErr != nil {
 			agentErrMsg = invokeErr.Error()
 			slog.Warn("webhook.worker.agent_invoke_failed",
