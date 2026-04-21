@@ -14,6 +14,11 @@ export interface SecureCLIBinary {
   updated_at: string;
   /** Env variable names only (no values); from API for edit form */
   env_keys?: string[];
+  /**
+   * Agent grants summary for row chips (Phase 4 API field).
+   * Absent on older API versions — capability-probe: skip rendering if undefined.
+   */
+  agent_grants_summary?: AgentGrantSummary[];
 }
 
 export interface CLIPresetEnvVar {
@@ -57,6 +62,10 @@ export interface CLIAgentGrant {
   timeout_seconds: number | null;
   tips: string | null;
   enabled: boolean;
+  /** Whether this grant has an env override (keys present, values encrypted) */
+  env_set?: boolean;
+  /** Env variable names only (no values); populated when env_set=true */
+  env_keys?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -68,4 +77,21 @@ export interface CLIAgentGrantInput {
   timeout_seconds?: number | null;
   tips?: string | null;
   enabled?: boolean;
+  /**
+   * env_vars in PUT body:
+   *   absent / undefined  -> keep existing (omit from payload)
+   *   null                -> clear override (fall back to binary defaults)
+   *   Record<string,string> -> replace override
+   */
+  env_vars?: Record<string, string> | null;
+}
+
+/** Summary of a single grant shown in the table row chips (Phase 4 API field). */
+export interface AgentGrantSummary {
+  grant_id: string;
+  agent_id: string;
+  agent_key: string;
+  name: string;
+  enabled: boolean;
+  env_set: boolean;
 }

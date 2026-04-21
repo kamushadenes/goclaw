@@ -4,25 +4,35 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/crypto"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
+// envRevealLimiter caps POST .../env:reveal to 10 calls/min per user (burst 3).
+// Prevents bulk secret-scraping through the reveal endpoint.
+var envRevealLimiter = newPerKeyRateLimiter(10, 3)
+
 // SecureCLIGrantHandler handles CRUD for per-agent secure CLI grants.
 type SecureCLIGrantHandler struct {
-	grants store.SecureCLIAgentGrantStore
-	msgBus *bus.MessageBus
+	grants      store.SecureCLIAgentGrantStore
+	tenantStore store.TenantStore
+	msgBus      *bus.MessageBus
 }
 
-func NewSecureCLIGrantHandler(gs store.SecureCLIAgentGrantStore, msgBus *bus.MessageBus) *SecureCLIGrantHandler {
-	return &SecureCLIGrantHandler{grants: gs, msgBus: msgBus}
+// NewSecureCLIGrantHandler creates the handler. tenantStore may be nil (requireTenantAdmin
+// handles that gracefully with a 501), but should always be provided in production.
+func NewSecureCLIGrantHandler(gs store.SecureCLIAgentGrantStore, ts store.TenantStore, msgBus *bus.MessageBus) *SecureCLIGrantHandler {
+	return &SecureCLIGrantHandler{grants: gs, tenantStore: ts, msgBus: msgBus}
 }
 
 // RegisterRoutes registers agent grant routes nested under cli-credentials.
@@ -35,9 +45,93 @@ func (h *SecureCLIGrantHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/cli-credentials/{id}/agent-grants/{grantId}", auth(h.handleGet))
 	mux.HandleFunc("PUT /v1/cli-credentials/{id}/agent-grants/{grantId}", auth(h.handleUpdate))
 	mux.HandleFunc("DELETE /v1/cli-credentials/{id}/agent-grants/{grantId}", auth(h.handleDelete))
+	// POST (not GET) to prevent caching and satisfy CSRF semantics per Red Team C1.
+	mux.HandleFunc("POST /v1/cli-credentials/{id}/agent-grants/{grantId}/env:reveal", auth(h.handleRevealEnv))
+}
+
+// grantCreateRequest is the typed DTO for grant creation.
+// EnvVars is optional; plaintext values are encrypted by the store layer.
+// Clients MUST NOT send encrypted_env — that field is never accepted from the wire.
+type grantCreateRequest struct {
+	AgentID        uuid.UUID         `json:"agent_id"`
+	EnvVars        map[string]string `json:"env_vars,omitempty"`
+	DenyArgs       *json.RawMessage  `json:"deny_args,omitempty"`
+	DenyVerbose    *json.RawMessage  `json:"deny_verbose,omitempty"`
+	TimeoutSeconds *int              `json:"timeout_seconds,omitempty"`
+	Tips           *string           `json:"tips,omitempty"`
+	Enabled        *bool             `json:"enabled,omitempty"`
+}
+
+// grantUpdateRequest is the typed DTO for grant updates.
+// EnvVars semantics:
+//   - field absent (nil pointer)  → keep existing env unchanged
+//   - field = null               → clear env override (pass nil to store)
+//   - field = {...}              → replace env with provided map
+type grantUpdateRequest struct {
+	EnvVars        **map[string]string `json:"env_vars"` // double pointer: nil=absent, *nil=null, **m=value
+	DenyArgs       *json.RawMessage    `json:"deny_args,omitempty"`
+	DenyVerbose    *json.RawMessage    `json:"deny_verbose,omitempty"`
+	TimeoutSeconds *int                `json:"timeout_seconds,omitempty"`
+	Tips           *string             `json:"tips,omitempty"`
+	Enabled        *bool               `json:"enabled,omitempty"`
+}
+
+// populateGrantEnvFields sets EnvKeys (sorted) and EnvSet from the grant's decrypted env bytes.
+// Plaintext values are never exposed — only key names.
+func populateGrantEnvFields(g *store.SecureCLIAgentGrant) {
+	if len(g.EncryptedEnv) == 0 {
+		g.EnvKeys = []string{}
+		g.EnvSet = false
+		return
+	}
+	var m map[string]any
+	if err := json.Unmarshal(g.EncryptedEnv, &m); err != nil {
+		g.EnvKeys = []string{}
+		g.EnvSet = false
+		return
+	}
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	g.EnvKeys = keys
+	g.EnvSet = len(keys) > 0
+}
+
+// validateAndSerializeEnvVars validates env keys/values via denylist and returns serialized JSON.
+// Returns (nil, 400 error response written) on denial, (jsonBytes, nil) on success.
+// Never logs env values or keys in error paths.
+func validateAndSerializeEnvVars(w http.ResponseWriter, locale string, envVars map[string]string) ([]byte, bool) {
+	if len(envVars) == 0 {
+		b, _ := json.Marshal(envVars)
+		return b, true
+	}
+	denied, valErr := crypto.ValidateGrantEnvVars(envVars)
+	if valErr != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgGrantEnvValueInvalid, valErr.Error())})
+		return nil, false
+	}
+	if len(denied) > 0 {
+		sort.Strings(denied)
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error":         i18n.T(locale, i18n.MsgGrantEnvDeniedKeys, strings.Join(denied, ", ")),
+			"rejected_keys": strings.Join(denied, ","),
+		})
+		return nil, false
+	}
+	b, err := json.Marshal(envVars)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgGrantEnvValueInvalid, "serialization failed")})
+		return nil, false
+	}
+	return b, true
 }
 
 func (h *SecureCLIGrantHandler) handleList(w http.ResponseWriter, r *http.Request) {
+	if !requireTenantAdmin(w, r, h.tenantStore) {
+		return
+	}
 	locale := store.LocaleFromContext(r.Context())
 	binaryID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -50,19 +144,17 @@ func (h *SecureCLIGrantHandler) handleList(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgFailedToList, "grants")})
 		return
 	}
+	// Populate env metadata (keys only, no values) for each grant.
+	for i := range grants {
+		populateGrantEnvFields(&grants[i])
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"grants": grants})
 }
 
-type grantCreateRequest struct {
-	AgentID        uuid.UUID        `json:"agent_id"`
-	DenyArgs       *json.RawMessage `json:"deny_args,omitempty"`
-	DenyVerbose    *json.RawMessage `json:"deny_verbose,omitempty"`
-	TimeoutSeconds *int             `json:"timeout_seconds,omitempty"`
-	Tips           *string          `json:"tips,omitempty"`
-	Enabled        *bool            `json:"enabled,omitempty"`
-}
-
 func (h *SecureCLIGrantHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
+	if !requireTenantAdmin(w, r, h.tenantStore) {
+		return
+	}
 	locale := store.LocaleFromContext(r.Context())
 	binaryID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -96,15 +188,35 @@ func (h *SecureCLIGrantHandler) handleCreate(w http.ResponseWriter, r *http.Requ
 	}
 	if err := h.grants.Create(r.Context(), g); err != nil {
 		slog.Error("secure_cli_grants.create", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgInternalError, "create grant")})
 		return
 	}
 
+	// Encrypt and persist env vars separately to isolate plaintext handling.
+	if len(req.EnvVars) > 0 {
+		envJSON, ok := validateAndSerializeEnvVars(w, locale, req.EnvVars)
+		if !ok {
+			// Grant was created but env failed; clean it up to avoid orphan row.
+			_ = h.grants.Delete(r.Context(), g.ID)
+			return
+		}
+		if err := h.grants.UpdateGrantEnv(r.Context(), g.ID, envJSON); err != nil {
+			slog.Error("secure_cli_grants.create.set_env", "grant_id", g.ID, "error", err)
+			_ = h.grants.Delete(r.Context(), g.ID)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgInternalError, "persist grant env")})
+			return
+		}
+	}
+
 	h.emitCacheInvalidate(binaryID.String())
+	populateGrantEnvFields(g)
 	writeJSON(w, http.StatusCreated, g)
 }
 
 func (h *SecureCLIGrantHandler) handleGet(w http.ResponseWriter, r *http.Request) {
+	if !requireTenantAdmin(w, r, h.tenantStore) {
+		return
+	}
 	locale := store.LocaleFromContext(r.Context())
 	grantID, err := uuid.Parse(r.PathValue("grantId"))
 	if err != nil {
@@ -116,10 +228,14 @@ func (h *SecureCLIGrantHandler) handleGet(w http.ResponseWriter, r *http.Request
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": i18n.T(locale, i18n.MsgNotFound, "grant", grantID.String())})
 		return
 	}
+	populateGrantEnvFields(g)
 	writeJSON(w, http.StatusOK, g)
 }
 
 func (h *SecureCLIGrantHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	if !requireTenantAdmin(w, r, h.tenantStore) {
+		return
+	}
 	locale := store.LocaleFromContext(r.Context())
 	grantID, err := uuid.Parse(r.PathValue("grantId"))
 	if err != nil {
@@ -127,25 +243,71 @@ func (h *SecureCLIGrantHandler) handleUpdate(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	var updates map[string]any
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&updates); err != nil {
+	// Decode into a raw map to distinguish absent vs null env_vars.
+	var raw map[string]json.RawMessage
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&raw); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidJSON)})
 		return
 	}
 
-	updates["updated_at"] = time.Now()
+	// Build typed field updates (allowlist: deny_args, deny_verbose, timeout_seconds, tips, enabled).
+	updates := map[string]any{"updated_at": time.Now()}
+	allowedScalar := map[string]bool{
+		"deny_args": true, "deny_verbose": true, "timeout_seconds": true,
+		"tips": true, "enabled": true,
+	}
+	for k, v := range raw {
+		if k == "env_vars" {
+			continue // handled separately below
+		}
+		if allowedScalar[k] {
+			var decoded any
+			if err := json.Unmarshal(v, &decoded); err == nil {
+				updates[k] = decoded
+			}
+		}
+	}
 	if err := h.grants.Update(r.Context(), grantID, updates); err != nil {
-		slog.Error("secure_cli_grants.update", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		slog.Error("secure_cli_grants.update", "grant_id", grantID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgInternalError, "update grant")})
 		return
 	}
 
-	binaryID := r.PathValue("id")
-	h.emitCacheInvalidate(binaryID)
+	// 3-state env_vars semantics: absent=skip, null=clear, {...}=replace.
+	if envRaw, present := raw["env_vars"]; present {
+		var envPtr *map[string]string
+		if string(envRaw) != "null" {
+			var m map[string]string
+			if err := json.Unmarshal(envRaw, &m); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgGrantEnvValueInvalid, "env_vars must be a string map")})
+				return
+			}
+			envPtr = &m
+		}
+		// envPtr == nil → clear; envPtr != nil → replace.
+		var envJSON []byte
+		if envPtr != nil && len(*envPtr) > 0 {
+			j, ok := validateAndSerializeEnvVars(w, locale, *envPtr)
+			if !ok {
+				return
+			}
+			envJSON = j
+		}
+		if err := h.grants.UpdateGrantEnv(r.Context(), grantID, envJSON); err != nil {
+			slog.Error("secure_cli_grants.update.set_env", "grant_id", grantID, "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgInternalError, "update grant env")})
+			return
+		}
+	}
+
+	h.emitCacheInvalidate(r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *SecureCLIGrantHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if !requireTenantAdmin(w, r, h.tenantStore) {
+		return
+	}
 	locale := store.LocaleFromContext(r.Context())
 	grantID, err := uuid.Parse(r.PathValue("grantId"))
 	if err != nil {
@@ -153,14 +315,80 @@ func (h *SecureCLIGrantHandler) handleDelete(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if err := h.grants.Delete(r.Context(), grantID); err != nil {
-		slog.Error("secure_cli_grants.delete", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		slog.Error("secure_cli_grants.delete", "grant_id", grantID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgInternalError, "delete grant")})
 		return
 	}
 
-	binaryID := r.PathValue("id")
-	h.emitCacheInvalidate(binaryID)
+	h.emitCacheInvalidate(r.PathValue("id"))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleRevealEnv decrypts and returns the grant's env vars in plaintext.
+//
+// Security posture:
+//   - POST method (not GET) defeats HTTP caching and browser prefetch/CSRF.
+//   - requireTenantAdmin + implicit tenant_id SQL filter (in store.Get).
+//   - Rate limited to 10 reveals/min per caller.
+//   - Cache-Control: no-store ensures response is not cached by intermediaries.
+//   - Audit log emitted with actor, tenant, grant, timestamp.
+//   - Plaintext values NEVER logged; only grant_id/tenant_id appear in logs.
+func (h *SecureCLIGrantHandler) handleRevealEnv(w http.ResponseWriter, r *http.Request) {
+	if !requireTenantAdmin(w, r, h.tenantStore) {
+		return
+	}
+	ctx := r.Context()
+	locale := store.LocaleFromContext(ctx)
+
+	// Rate limit: 10 reveals/min per caller.
+	rlKey := rateLimitKeyFromRequest(r)
+	if !envRevealLimiter.Allow(rlKey) {
+		slog.Warn("security.rate_limited", "endpoint", "env:reveal", "key", rlKey)
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": i18n.T(locale, i18n.MsgGrantEnvRevealLimit)})
+		return
+	}
+
+	grantID, err := uuid.Parse(r.PathValue("grantId"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidID, "grant")})
+		return
+	}
+
+	// store.Get enforces tenant_id = $2 filter (non-cross-tenant context).
+	g, err := h.grants.Get(ctx, grantID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": i18n.T(locale, i18n.MsgNotFound, "grant", grantID.String())})
+		return
+	}
+
+	tenantID := store.TenantIDFromContext(ctx)
+	callerID := store.UserIDFromContext(ctx)
+	// Audit log: actor, tenant, grant, timestamp. No plaintext env logged.
+	slog.Warn("security.cli_credential.env.reveal",
+		"caller_id", callerID,
+		"tenant_id", tenantID,
+		"grant_id", grantID,
+		"binary_id", r.PathValue("id"),
+		"reason", "reveal-env",
+		"ts", time.Now().UTC(),
+	)
+
+	// Prevent HTTP/proxy caching of the secret response.
+	w.Header().Set("Cache-Control", "no-store, no-cache")
+	w.Header().Set("Pragma", "no-cache")
+
+	// EncryptedEnv at this point contains the decrypted plaintext JSON (store.Get decrypts on read).
+	if len(g.EncryptedEnv) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{"env_vars": map[string]string{}})
+		return
+	}
+	var envVars map[string]string
+	if err := json.Unmarshal(g.EncryptedEnv, &envVars); err != nil {
+		slog.Error("secure_cli_grants.reveal.parse", "grant_id", grantID, "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgInternalError, "parse grant env")})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"env_vars": envVars})
 }
 
 func (h *SecureCLIGrantHandler) emitCacheInvalidate(key string) {

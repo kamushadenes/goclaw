@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 24
+const SchemaVersion = 25
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -496,6 +496,14 @@ CREATE TRIGGER IF NOT EXISTS trg_vault_docs_scope_consistency_upd
   BEGIN
     SELECT RAISE(ABORT, 'vault_documents_scope_consistency violation');
   END;`,
+
+	// Version 24 → 25: add encrypted_env BLOB column to secure_cli_agent_grants.
+	// Mirrors PG migration 000056. NULL = no grant-level env override.
+	// DOWN path: modernc.org/sqlite supports DROP COLUMN since v3.35 (bundled
+	// version is ≥3.39). If DROP COLUMN fails on an older embedded build, the
+	// fallback is to rebuild the table without the column — see runbook
+	// docs/runbooks/packages-migration-rollback.md.
+	24: `ALTER TABLE secure_cli_agent_grants ADD COLUMN encrypted_env BLOB;`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.
