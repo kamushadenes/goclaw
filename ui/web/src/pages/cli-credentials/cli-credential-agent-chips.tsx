@@ -4,6 +4,8 @@
  *
  * Capabilities:
  * - Shows first 5 chips; overflow becomes "+N more" text (no popover needed)
+ * - Backend caps the summary at 20 grants per binary; counts beyond that are
+ *   truncated. Use the grants management dialog to see/edit the full set.
  * - Chip: agent name + KeyRound icon when env_set=true
  * - Tooltip with agent_key + grant_id + env_set status
  * - Capability-probe: if agent_grants_summary is absent/undefined, renders nothing

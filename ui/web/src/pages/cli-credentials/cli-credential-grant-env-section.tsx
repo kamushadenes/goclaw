@@ -14,11 +14,17 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "@/stores/use-toast-store";
 import { useHttp } from "@/hooks/use-ws";
 
-// Keep in sync with internal/gateway/env_denylist.go
-const ENV_DENYLIST = new Set([
-  "PATH", "HOME", "USER", "SHELL", "TERM", "LANG", "LC_ALL",
-  "GOCLAW_TOKEN", "GOCLAW_SECRET", "GOCLAW_DB", "GOCLAW_CONFIG",
+// Keep in sync with internal/crypto/env_denylist.go.
+// Backend is authoritative; this list drives inline UX warnings only.
+const ENV_DENYLIST_EXACT = new Set([
+  "PATH", "HOME", "USER", "SHELL", "PWD",
+  "LD_PRELOAD", "LD_LIBRARY_PATH", "LD_AUDIT",
+  "NODE_OPTIONS", "NODE_PATH",
+  "PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP",
+  "GIT_SSH_COMMAND", "GIT_SSH", "GIT_EXEC_PATH", "GIT_CONFIG_SYSTEM",
+  "SSH_AUTH_SOCK",
 ]);
+const ENV_DENYLIST_PREFIXES = ["DYLD_", "GOCLAW_", "LD_"];
 
 export interface GrantEnvEntry {
   key: string;
@@ -100,7 +106,12 @@ export function CliCredentialGrantEnvSection({
   const updateEntry = useCallback((i: number, f: "key" | "value", v: string) =>
     setEntries((p) => p.map((e, j) => j === i ? { ...e, [f]: v, masked: false } : e)), [setEntries]);
 
-  const isDenied = (k: string) => k.length > 0 && ENV_DENYLIST.has(k.toUpperCase());
+  const isDenied = (k: string) => {
+    if (k.length === 0) return false;
+    const upper = k.toUpperCase();
+    if (ENV_DENYLIST_EXACT.has(upper)) return true;
+    return ENV_DENYLIST_PREFIXES.some((p) => upper.startsWith(p));
+  };
   const isRejected = (k: string) => k.length > 0 && rejectedKeys.includes(k);
   const hasMasked = entries.some((e) => e.masked);
 

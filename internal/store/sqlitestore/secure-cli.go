@@ -374,7 +374,7 @@ func (s *SQLiteSecureCLIStore) LookupByBinary(ctx context.Context, binaryName st
 	}
 
 	selectCols := secureCLISelectColsAliased
-	selectCols += `, g.deny_args AS grant_deny_args, g.deny_verbose AS grant_deny_verbose, g.timeout_seconds AS grant_timeout, g.tips AS grant_tips, g.enabled AS grant_enabled, g.id AS grant_id`
+	selectCols += `, g.deny_args AS grant_deny_args, g.deny_verbose AS grant_deny_verbose, g.timeout_seconds AS grant_timeout, g.tips AS grant_tips, g.enabled AS grant_enabled, g.id AS grant_id, g.encrypted_env AS grant_enc_env`
 
 	var args []any
 
@@ -447,6 +447,7 @@ func (s *SQLiteSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.
 	var grantTips *string
 	var grantEnabled *bool
 	var grantID *uuid.UUID
+	var grantEncEnv []byte
 	var userEnv []byte
 	var createdAt, updatedAt sqliteTime
 
@@ -455,7 +456,7 @@ func (s *SQLiteSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.
 		&denyArgs, &denyVerbose,
 		&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
 		&b.Enabled, &b.CreatedBy, &createdAt, &updatedAt,
-		&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantEnabled, &grantID,
+		&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantEnabled, &grantID, &grantEncEnv,
 		&userEnv,
 	)
 	if err != nil {
@@ -497,6 +498,11 @@ func (s *SQLiteSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.
 		}
 		grant.TimeoutSeconds = grantTimeout
 		grant.Tips = grantTips
+		if len(grantEncEnv) > 0 && s.encKey != "" {
+			if decrypted, err := crypto.Decrypt(string(grantEncEnv), s.encKey); err == nil {
+				grant.EncryptedEnv = []byte(decrypted)
+			}
+		}
 		b.MergeGrantOverrides(grant)
 	}
 
@@ -570,7 +576,8 @@ func (s *SQLiteSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UU
 
 	selectCols := secureCLISelectColsAliased +
 		`, g.deny_args AS grant_deny_args, g.deny_verbose AS grant_deny_verbose,
-		   g.timeout_seconds AS grant_timeout, g.tips AS grant_tips, g.id AS grant_id`
+		   g.timeout_seconds AS grant_timeout, g.tips AS grant_tips, g.id AS grant_id,
+		   g.encrypted_env AS grant_enc_env`
 
 	query := `SELECT ` + selectCols + ` FROM secure_cli_binaries b
 		LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = ?
@@ -603,6 +610,7 @@ func (s *SQLiteSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UU
 		var grantTimeout *int
 		var grantTips *string
 		var grantID *uuid.UUID
+		var grantEncEnv []byte
 		var createdAt, updatedAt sqliteTime
 
 		if err := rows.Scan(
@@ -610,7 +618,7 @@ func (s *SQLiteSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UU
 			&denyArgs, &denyVerbose,
 			&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
 			&b.Enabled, &b.CreatedBy, &createdAt, &updatedAt,
-			&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantID,
+			&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantID, &grantEncEnv,
 		); err != nil {
 			return nil, fmt.Errorf("scan secure_cli_binaries row: %w", err)
 		}
@@ -645,6 +653,11 @@ func (s *SQLiteSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UU
 			}
 			grant.TimeoutSeconds = grantTimeout
 			grant.Tips = grantTips
+			if len(grantEncEnv) > 0 && s.encKey != "" {
+				if decrypted, err := crypto.Decrypt(string(grantEncEnv), s.encKey); err == nil {
+					grant.EncryptedEnv = []byte(decrypted)
+				}
+			}
 			b.MergeGrantOverrides(grant)
 		}
 

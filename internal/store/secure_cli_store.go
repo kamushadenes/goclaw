@@ -59,6 +59,10 @@ func (b *SecureCLIBinary) MergeGrantOverrides(g *SecureCLIAgentGrant) {
 	if g.Tips != nil {
 		b.Tips = *g.Tips
 	}
+	// Grant env fully replaces binary default env when non-empty.
+	if len(g.EncryptedEnv) > 0 {
+		b.EncryptedEnv = g.EncryptedEnv
+	}
 }
 
 // SecureCLIUserCredential holds per-user encrypted env overrides for a binary.

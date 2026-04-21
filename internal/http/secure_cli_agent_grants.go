@@ -62,20 +62,6 @@ type grantCreateRequest struct {
 	Enabled        *bool             `json:"enabled,omitempty"`
 }
 
-// grantUpdateRequest is the typed DTO for grant updates.
-// EnvVars semantics:
-//   - field absent (nil pointer)  → keep existing env unchanged
-//   - field = null               → clear env override (pass nil to store)
-//   - field = {...}              → replace env with provided map
-type grantUpdateRequest struct {
-	EnvVars        **map[string]string `json:"env_vars"` // double pointer: nil=absent, *nil=null, **m=value
-	DenyArgs       *json.RawMessage    `json:"deny_args,omitempty"`
-	DenyVerbose    *json.RawMessage    `json:"deny_verbose,omitempty"`
-	TimeoutSeconds *int                `json:"timeout_seconds,omitempty"`
-	Tips           *string             `json:"tips,omitempty"`
-	Enabled        *bool               `json:"enabled,omitempty"`
-}
-
 // populateGrantEnvFields sets EnvKeys (sorted) and EnvSet from the grant's decrypted env bytes.
 // Plaintext values are never exposed — only key names.
 func populateGrantEnvFields(g *store.SecureCLIAgentGrant) {
@@ -206,6 +192,8 @@ func (h *SecureCLIGrantHandler) handleCreate(w http.ResponseWriter, r *http.Requ
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgInternalError, "persist grant env")})
 			return
 		}
+		// Reflect the newly-persisted env bytes in the response so env_set/env_keys are accurate.
+		g.EncryptedEnv = envJSON
 	}
 
 	h.emitCacheInvalidate(binaryID.String())
@@ -285,6 +273,8 @@ func (h *SecureCLIGrantHandler) handleUpdate(w http.ResponseWriter, r *http.Requ
 			envPtr = &m
 		}
 		// envPtr == nil → clear; envPtr != nil → replace.
+		// Note: envPtr pointing to an empty map ({}) is treated as clear (same as null) —
+		// envJSON stays nil and UpdateGrantEnv(nil) removes the override.
 		var envJSON []byte
 		if envPtr != nil && len(*envPtr) > 0 {
 			j, ok := validateAndSerializeEnvVars(w, locale, *envPtr)
@@ -353,6 +343,11 @@ func (h *SecureCLIGrantHandler) handleRevealEnv(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidID, "grant")})
 		return
 	}
+	binaryID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidID, "binary")})
+		return
+	}
 
 	// store.Get enforces tenant_id = $2 filter (non-cross-tenant context).
 	g, err := h.grants.Get(ctx, grantID)
@@ -368,7 +363,7 @@ func (h *SecureCLIGrantHandler) handleRevealEnv(w http.ResponseWriter, r *http.R
 		"caller_id", callerID,
 		"tenant_id", tenantID,
 		"grant_id", grantID,
-		"binary_id", r.PathValue("id"),
+		"binary_id", binaryID,
 		"reason", "reveal-env",
 		"ts", time.Now().UTC(),
 	)

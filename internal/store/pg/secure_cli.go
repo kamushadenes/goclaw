@@ -250,6 +250,8 @@ func (s *PGSecureCLIStore) List(ctx context.Context) ([]store.SecureCLIBinary, e
 		FROM secure_cli_agent_grants g
 		JOIN agents a ON a.id = g.agent_id AND a.tenant_id = g.tenant_id
 		WHERE g.binary_id = b.id AND g.tenant_id = $1
+		-- Hard cap: list view renders summary chips only. Admins with >20 grants per
+		-- binary still see the first 20; use the detail dialog for the full set.
 		LIMIT 20
 	) sg ON true`
 
@@ -341,7 +343,7 @@ func (s *PGSecureCLIStore) LookupByBinary(ctx context.Context, binaryName string
 
 	// Build SELECT columns with optional LEFT JOINs for grant overrides and user env
 	selectCols := secureCLISelectColsAliased
-	grantCols := ", g.deny_args AS grant_deny_args, g.deny_verbose AS grant_deny_verbose, g.timeout_seconds AS grant_timeout, g.tips AS grant_tips, g.enabled AS grant_enabled, g.id AS grant_id"
+	grantCols := ", g.deny_args AS grant_deny_args, g.deny_verbose AS grant_deny_verbose, g.timeout_seconds AS grant_timeout, g.tips AS grant_tips, g.enabled AS grant_enabled, g.id AS grant_id, g.encrypted_env AS grant_enc_env"
 	selectCols += grantCols
 
 	var joinClause string
@@ -420,6 +422,7 @@ func (s *PGSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.Secu
 	var grantTips *string
 	var grantEnabled *bool
 	var grantID *uuid.UUID
+	var grantEncEnv []byte
 	var userEnv []byte
 
 	err := row.Scan(
@@ -428,7 +431,7 @@ func (s *PGSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.Secu
 		&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
 		&b.Enabled, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt,
 		// Grant columns
-		&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantEnabled, &grantID,
+		&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantEnabled, &grantID, &grantEncEnv,
 		// User env
 		&userEnv,
 	)
@@ -469,6 +472,12 @@ func (s *PGSecureCLIStore) scanRowWithGrantAndUserEnv(row *sql.Row) (*store.Secu
 		}
 		grant.TimeoutSeconds = grantTimeout
 		grant.Tips = grantTips
+		// Decrypt grant env override (fail-closed: skip if decrypt fails).
+		if len(grantEncEnv) > 0 && s.encKey != "" {
+			if decrypted, err := crypto.Decrypt(string(grantEncEnv), s.encKey); err == nil {
+				grant.EncryptedEnv = []byte(decrypted)
+			}
+		}
 		b.MergeGrantOverrides(grant)
 	}
 
@@ -541,7 +550,8 @@ func (s *PGSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID) 
 
 	selectCols := secureCLISelectColsAliased +
 		`, g.deny_args AS grant_deny_args, g.deny_verbose AS grant_deny_verbose,
-		   g.timeout_seconds AS grant_timeout, g.tips AS grant_tips, g.id AS grant_id`
+		   g.timeout_seconds AS grant_timeout, g.tips AS grant_tips, g.id AS grant_id,
+		   g.encrypted_env AS grant_enc_env`
 
 	query := `SELECT ` + selectCols + ` FROM secure_cli_binaries b
 		LEFT JOIN secure_cli_agent_grants g ON g.binary_id = b.id AND g.agent_id = $1
@@ -575,13 +585,14 @@ func (s *PGSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID) 
 		var grantTimeout *int
 		var grantTips *string
 		var grantID *uuid.UUID
+		var grantEncEnv []byte
 
 		if err := rows.Scan(
 			&b.ID, &b.BinaryName, &binaryPath, &b.Description, &env,
 			&denyArgs, &denyVerbose,
 			&b.TimeoutSeconds, &b.Tips, &b.IsGlobal,
 			&b.Enabled, &b.CreatedBy, &b.CreatedAt, &b.UpdatedAt,
-			&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantID,
+			&grantDenyArgs, &grantDenyVerbose, &grantTimeout, &grantTips, &grantID, &grantEncEnv,
 		); err != nil {
 			continue
 		}
@@ -614,6 +625,11 @@ func (s *PGSecureCLIStore) ListForAgent(ctx context.Context, agentID uuid.UUID) 
 			}
 			grant.TimeoutSeconds = grantTimeout
 			grant.Tips = grantTips
+			if len(grantEncEnv) > 0 && s.encKey != "" {
+				if decrypted, err := crypto.Decrypt(string(grantEncEnv), s.encKey); err == nil {
+					grant.EncryptedEnv = []byte(decrypted)
+				}
+			}
 			b.MergeGrantOverrides(grant)
 		}
 
