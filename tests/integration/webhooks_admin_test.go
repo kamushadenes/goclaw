@@ -107,7 +107,7 @@ func TestWebhookAdminCRUD(t *testing.T) {
 	newRawSecret := "wh_newsecret_rotated"
 	newH := sha256.Sum256([]byte(newRawSecret))
 	newHashHex := hex.EncodeToString(newH[:])
-	err = s.RotateSecret(ctx, wh.ID, hex.EncodeToString(h[:]), newHashHex)
+	err = s.RotateSecret(ctx, wh.ID, newHashHex, "wh_newrot", "encrypted_placeholder")
 	if err != nil {
 		t.Fatalf("RotateSecret failed: %v", err)
 	}
