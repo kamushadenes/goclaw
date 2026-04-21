@@ -292,7 +292,10 @@ func (w *WebhookWorker) execute(ctx context.Context, call *store.WebhookCallData
 		}
 	}()
 
-	tctx := store.WithTenantID(ctx, tenantID)
+	// Use WithoutCancel so DB status writes survive worker ctx cancellation at
+	// graceful shutdown. Prevents unnecessary re-delivery via reclaimStale when
+	// the send completes but the terminal status update races with shutdown.
+	tctx := store.WithTenantID(context.WithoutCancel(ctx), tenantID)
 
 	// Decode stored request payload.
 	var req asyncPayload
