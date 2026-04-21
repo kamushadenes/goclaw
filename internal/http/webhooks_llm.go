@@ -341,6 +341,7 @@ func (h *WebhookLLMHandler) handleSync(
 	}
 
 	if out.err != nil {
+		completedAt := time.Now()
 		if errors.Is(out.err, context.DeadlineExceeded) {
 			// Write audit row as failed/timeout.
 			errMsg := "context deadline exceeded"
@@ -356,7 +357,7 @@ func (h *WebhookLLMHandler) handleSync(
 				RequestPayload: requestPayload,
 				LastError:      &errMsg,
 				CreatedAt:      now,
-				CompletedAt:    new(time.Now()),
+				CompletedAt:    &completedAt,
 				StartedAt:      &now,
 			})
 			writeError(w, http.StatusGatewayTimeout, protocol.ErrInternal,
@@ -378,7 +379,7 @@ func (h *WebhookLLMHandler) handleSync(
 			RequestPayload: requestPayload,
 			LastError:      &errMsg,
 			CreatedAt:      now,
-			CompletedAt:    new(time.Now()),
+			CompletedAt:    &completedAt,
 			StartedAt:      &now,
 		})
 		writeError(w, http.StatusInternalServerError, protocol.ErrInternal,
@@ -561,7 +562,3 @@ func resolveWebhookSessionKey(reqSessionKey, agentID string, webhookID uuid.UUID
 	return fmt.Sprintf("webhook:%s:%s:%s", agentID, webhookID.String(), runID[:8])
 }
 
-// ptr returns a pointer to v.
-//
-//go:fix inline
-func ptr[T any](v T) *T { return new(v) }

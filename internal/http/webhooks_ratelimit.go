@@ -73,11 +73,17 @@ func (wl *webhookLimiter) allow(key string, rpm int) bool {
 	burst := rpm // burst = full rpm per spec (Success Criteria §3)
 
 	nowNs := time.Now().UnixNano()
-	fresh := &webhookLimiterEntry{limiter: rate.NewLimiter(limit, burst)}
-	fresh.lastSeen.Store(nowNs)
 
-	v, _ := wl.buckets.LoadOrStore(key, fresh)
-	entry := v.(*webhookLimiterEntry)
+	// Fast path: Load avoids allocating a new entry on hits (the common case).
+	var entry *webhookLimiterEntry
+	if v, ok := wl.buckets.Load(key); ok {
+		entry = v.(*webhookLimiterEntry)
+	} else {
+		fresh := &webhookLimiterEntry{limiter: rate.NewLimiter(limit, burst)}
+		fresh.lastSeen.Store(nowNs)
+		v, _ := wl.buckets.LoadOrStore(key, fresh)
+		entry = v.(*webhookLimiterEntry)
+	}
 	if !entry.limiter.Allow() {
 		return false
 	}

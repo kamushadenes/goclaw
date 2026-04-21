@@ -127,7 +127,7 @@ func (s *PGWebhookStore) GetByIDUnscoped(ctx context.Context, id uuid.UUID) (*st
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+webhookColumns+`
 		 FROM webhooks
-		 WHERE id = $1`,
+		 WHERE id = $1 AND NOT revoked`,
 		id,
 	)
 	return scanWebhookRow(row)

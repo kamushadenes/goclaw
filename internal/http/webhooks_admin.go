@@ -107,18 +107,19 @@ type webhookCreateResp struct {
 func (h *WebhooksAdminHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	locale := extractLocale(r)
 
+	// Auth first — don't leak config state (encKey presence) to unauthenticated callers.
+	if !requireTenantAdmin(w, r, h.tenants) {
+		slog.Warn("security.webhook.admin_denied", "action", "create", "path", r.URL.Path,
+			"user_id", store.UserIDFromContext(r.Context()))
+		return
+	}
+
 	// Defense-in-depth: primary guard is skip-mount in gateway_http_wiring.go.
 	// This secondary guard protects if the handler is ever wired without an encKey
 	// (e.g. test harness or future refactor that bypasses the wiring guard).
 	if h.encKey == "" {
 		slog.Error("security.webhook.admin_no_enc_key", "action", "create")
 		writeError(w, http.StatusServiceUnavailable, protocol.ErrInternal, i18n.T(locale, i18n.MsgWebhookEncryptionUnavailable))
-		return
-	}
-
-	if !requireTenantAdmin(w, r, h.tenants) {
-		slog.Warn("security.webhook.admin_denied", "action", "create", "path", r.URL.Path,
-			"user_id", store.UserIDFromContext(r.Context()))
 		return
 	}
 
@@ -403,17 +404,18 @@ func (h *WebhooksAdminHandler) handleUpdate(w http.ResponseWriter, r *http.Reque
 func (h *WebhooksAdminHandler) handleRotate(w http.ResponseWriter, r *http.Request) {
 	locale := extractLocale(r)
 
+	// Auth first — don't leak config state (encKey presence) to unauthenticated callers.
+	if !requireTenantAdmin(w, r, h.tenants) {
+		slog.Warn("security.webhook.admin_denied", "action", "rotate", "path", r.URL.Path,
+			"user_id", store.UserIDFromContext(r.Context()))
+		return
+	}
+
 	// Defense-in-depth: same guard as handleCreate — encryption key must be present
 	// before we generate and persist a new secret.
 	if h.encKey == "" {
 		slog.Error("security.webhook.admin_no_enc_key", "action", "rotate")
 		writeError(w, http.StatusServiceUnavailable, protocol.ErrInternal, i18n.T(locale, i18n.MsgWebhookEncryptionUnavailable))
-		return
-	}
-
-	if !requireTenantAdmin(w, r, h.tenants) {
-		slog.Warn("security.webhook.admin_denied", "action", "rotate", "path", r.URL.Path,
-			"user_id", store.UserIDFromContext(r.Context()))
 		return
 	}
 

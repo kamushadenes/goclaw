@@ -135,7 +135,7 @@ func (s *SQLiteWebhookStore) GetByIDUnscoped(ctx context.Context, id uuid.UUID) 
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+sqliteWebhookSelectCols+`
 		 FROM webhooks
-		 WHERE id = ?`,
+		 WHERE id = ? AND revoked = 0`,
 		id,
 	)
 	return scanSQLiteWebhookRow(row)

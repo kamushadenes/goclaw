@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -198,8 +199,9 @@ func WebhookAuthMiddleware(
 				ctx = store.WithAgentID(ctx, *webhook.AgentID)
 			}
 
-			// Best-effort touch — don't block on failure.
-			go func() { _ = ws.TouchLastUsed(r.Context(), webhook.ID) }()
+			// Best-effort touch — don't block on failure. Use WithoutCancel so
+			// the DB write is not cancelled when the HTTP response completes.
+			go func() { _ = ws.TouchLastUsed(context.WithoutCancel(r.Context()), webhook.ID) }()
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
