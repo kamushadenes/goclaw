@@ -2,7 +2,7 @@
  * Per-grant env override section.
  * Switch "Override binary defaults" (M1: checkbox-equivalent).
  * Reveal: POST .../env:reveal — values in component state only, cleared on close.
- * Denylist: keep in sync with internal/gateway/env_denylist.go
+ * Denylist: keep in sync with internal/crypto/env_denylist.go
  */
 import { useState, useCallback } from "react";
 import { useTranslation } from "react-i18next";

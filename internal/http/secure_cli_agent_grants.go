@@ -355,6 +355,11 @@ func (h *SecureCLIGrantHandler) handleRevealEnv(w http.ResponseWriter, r *http.R
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": i18n.T(locale, i18n.MsgNotFound, "grant", grantID.String())})
 		return
 	}
+	// Enforce URL parent-child hierarchy: grant must belong to binaryID in path.
+	if g.BinaryID != binaryID {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": i18n.T(locale, i18n.MsgNotFound, "grant", grantID.String())})
+		return
+	}
 
 	tenantID := store.TenantIDFromContext(ctx)
 	callerID := store.UserIDFromContext(ctx)
