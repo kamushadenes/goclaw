@@ -13,6 +13,7 @@ flowchart LR
         DC["Discord"]
         SL["Slack"]
         FS["Feishu/Lark"]
+        ZB["Zalo Bot"]
         ZL["Zalo OA"]
         ZLP["Zalo Personal"]
         WA["WhatsApp"]
@@ -90,7 +91,7 @@ Every channel must implement the base interface:
 | `StreamingChannel` | Real-time streaming updates | Telegram, Slack |
 | `WebhookChannel` | Webhook HTTP handler mounting | Facebook, Feishu/Lark, Pancake |
 | `ReactionChannel` | Status reactions on messages | Telegram, Slack, Feishu |
-| `BlockReplyChannel` | Override gateway block_reply setting | Discord, Feishu/Lark, Pancake, Slack, Zalo OA, Zalo Personal |
+| `BlockReplyChannel` | Override gateway block_reply setting | Discord, Feishu/Lark, Pancake, Slack, Zalo Bot, Zalo OA, Zalo Personal |
 
 `BaseChannel` provides a shared implementation that all channels embed: allowlist matching, `HandleMessage()`, `CheckPolicy()`, and user ID extraction.
 
@@ -555,11 +556,21 @@ The WhatsApp channel connects directly to the WhatsApp network via the multi-dev
 
 ---
 
-## 10. Zalo OA
+## 10. Zalo Bot + Zalo OA (two variants)
 
-The Zalo OA (Official Account) channel connects to the Zalo OA Bot API.
+Zalo ships two distinct channel types under the same "Official Account"
+umbrella. GoClaw exposes both; pick based on deployment scale and auth model.
 
-### Key Behaviors
+| Variant | Channel type | Auth | When to use |
+|---|---|---|---|
+| **Zalo Bot** | `zalo_bot` | Pre-provisioned static OA access token pasted into the gateway | Dev, small-scale, single-OA setups |
+| **Zalo OA** | `zalo_oa` | OAuth v4 consent flow (user completes consent in Zalo, gateway stores refresh token + auto-refreshes access tokens) | Production, multi-OA, long-running deployments |
+
+Both variants consume the same `/v3.0/oa/message/cs` send endpoint and the
+same message-shape rules (template/media for images+gifs, plain `type=file`
+for files). They differ only in how access tokens are obtained + refreshed.
+
+### Zalo Bot — static-token variant
 
 - **DM only**: No group support. Only direct messages are processed
 - **Text limit**: 2,000-character maximum per message
@@ -567,6 +578,24 @@ The Zalo OA (Official Account) channel connects to the Zalo OA Bot API.
 - **Media**: Image support with 5 MB default limit
 - **Default DM policy**: `"pairing"` (requires pairing code)
 - **Pairing debounce**: 60-second debounce on pairing instructions
+
+### Zalo OA — OAuth v4 variant
+
+- **Auth flow**: User provides consent via Zalo OAuth endpoint; `code` query
+  param pasted back into the gateway; gateway exchanges for access + refresh
+  tokens and stores encrypted at rest
+- **Token refresh**: Lazy single-flight; safety ticker preempts near-expiry
+- **Polling**: `/v2.0/oa/listrecentchat` (Zalo does not yet offer webhook v2
+  for OA OAuth); polling interval configurable per instance
+- **Per-endpoint caps**: image 1MB (hard Zalo cap, compress-before-upload
+  attempts downshift), file 5MB (PDF/DOC/DOCX only), gif 5MB
+- **Error-code registry**: centralized in
+  `internal/channels/zalo/oa/errors.go` (access-token-invalid family:
+  216/-216/401/-401; invalid_grant -118; params-invalid -201; file-size
+  exceeded -210; invalid redirect URI -14003)
+- **Trace mode**: set `GOCLAW_ZALO_OA_TRACE=1` to dump raw Zalo response
+  bodies at Debug level. PII-sensitive — do NOT enable in production
+  without scrubbing review
 
 ---
 
@@ -576,14 +605,14 @@ The Zalo Personal channel provides access to personal Zalo accounts using a reve
 
 ### Key Differences from Zalo OA
 
-| Aspect | Zalo OA | Zalo Personal |
-|--------|---------|---------------|
-| Protocol | Official Bot API | Reverse-engineered (zcago, MIT) |
+| Aspect | Zalo OA / Bot | Zalo Personal |
+|--------|---------------|---------------|
+| Protocol | Official OA API (OAuth v4 or static token) | Reverse-engineered (zcago, MIT) |
 | DM support | Yes | Yes |
 | Group support | No | Yes |
 | Default DM policy | `pairing` | `allowlist` (restrictive) |
 | Default group policy | N/A | `allowlist` (restrictive) |
-| Authentication | API credentials | Pre-loaded credentials or QR scan |
+| Authentication | API credentials or OAuth consent | Pre-loaded credentials or QR scan |
 | Risk | None | Account may be locked/banned |
 
 ### Security Warning
