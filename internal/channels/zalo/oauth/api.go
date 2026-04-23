@@ -66,17 +66,13 @@ func (e *APIError) Error() string {
 
 // isAuth reports whether this error indicates an invalid/expired access
 // token at the OpenAPI layer (distinct from refresh-token death — that's
-// classifyRefreshError's job). Codes from the Zalo OA SDK (UNVERIFIED
-// official doc; mirrors the conservative substring fallback).
-//
-// 216 / -216 / 401 are the codes commonly seen for "access_token invalid".
-// Substring fallback covers documentation drift.
+// classifyRefreshError's job). Code-based check plus a substring fallback
+// for documentation drift. Code values live in errors.go.
 func (e *APIError) isAuth() bool {
 	if e == nil {
 		return false
 	}
-	switch e.Code {
-	case 216, -216, 401, -401:
+	if isAccessTokenInvalid(e.Code) {
 		return true
 	}
 	msg := strings.ToLower(e.Message)
