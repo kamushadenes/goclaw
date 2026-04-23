@@ -23,7 +23,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store/pg"
 )
 
-// TestZaloOAuthLifecycle exercises the full feature against a real PG
+// TestZaloOALifecycle exercises the full feature against a real PG
 // (store-layer encryption + tenant scope) and a mocked Zalo API.
 // Skips automatically if TEST_DATABASE_URL is unset / unreachable.
 //
@@ -36,7 +36,7 @@ import (
 //   7. Force-refresh + Send again → mock refresh hit + send hit
 //   8. Force ErrAuthExpired on refresh → health flips Failed/Auth
 //   9. Stop channel cleanly within bounded time
-func TestZaloOAuthLifecycle(t *testing.T) {
+func TestZaloOALifecycle(t *testing.T) {
 	db := testDB(t)
 
 	tenantID, agentID := seedTenantAgent(t, db)
