@@ -389,6 +389,7 @@ func processNormalMessage(
 		ChannelType:       resolveChannelType(deps.ChannelMgr, msg.Channel),
 		ChatTitle:         msg.Metadata[tools.MetaChatTitle],
 		ChatID:            msg.ChatID,
+		WorkspaceChatID:   msg.ChatID,
 		PeerKind:          peerKind,
 		LocalKey:          msg.Metadata["local_key"],
 		UserID:            userID,
