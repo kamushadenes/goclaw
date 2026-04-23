@@ -43,18 +43,18 @@ export function ZaloOAConsentDialog({
     <Dialog open={open} onOpenChange={(v) => { if (!flow.submitting) onOpenChange(v); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{t("zaloOauth.dialogTitle", { name: instanceName })}</DialogTitle>
-          <DialogDescription>{t("zaloOauth.dialogDescription")}</DialogDescription>
+          <DialogTitle>{t("zaloOa.dialogTitle", { name: instanceName })}</DialogTitle>
+          <DialogDescription>{t("zaloOa.dialogDescription")}</DialogDescription>
         </DialogHeader>
 
         <ZaloOAConnectBody flow={flow} />
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={flow.submitting}>
-            {t("zaloOauth.cancel")}
+            {t("zaloOa.cancel")}
           </Button>
           <Button onClick={flow.handleSubmit} disabled={!canSubmit}>
-            {flow.submitting ? t("zaloOauth.connecting") : t("zaloOauth.connect")}
+            {flow.submitting ? t("zaloOa.connecting") : t("zaloOa.connect")}
           </Button>
         </div>
       </DialogContent>

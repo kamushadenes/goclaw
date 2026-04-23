@@ -20,10 +20,10 @@ export function ZaloOAAuthStep({ instanceId, onComplete, onSkip }: WizardAuthSte
       <ZaloOAConnectBody flow={flow} />
       <DialogFooter>
         <Button variant="outline" onClick={onSkip} disabled={flow.submitting}>
-          {t("zaloOauth.cancel")}
+          {t("zaloOa.cancel")}
         </Button>
         <Button onClick={flow.handleSubmit} disabled={!canSubmit}>
-          {flow.submitting ? t("zaloOauth.connecting") : t("zaloOauth.connect")}
+          {flow.submitting ? t("zaloOa.connecting") : t("zaloOa.connect")}
         </Button>
       </DialogFooter>
     </>

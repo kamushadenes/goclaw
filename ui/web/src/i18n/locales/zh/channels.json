@@ -349,7 +349,7 @@
       "createLabel": "创建并扫码",
       "formBanner": "创建后，请用 WhatsApp 扫描二维码完成认证。"
     },
-    "zaloOauth": {
+    "zaloOa": {
       "createLabel": "创建并连接",
       "formBanner": "创建后,您将在 Zalo 中授权访问并粘贴返回的代码以完成授权。"
     }
@@ -417,7 +417,7 @@
     "connectedSuccess": "✅ WhatsApp 连接成功！",
     "tabQrCode": "二维码"
   },
-  "zaloOauth": {
+  "zaloOa": {
     "dialogTitle": "连接 Zalo OA — {{name}}",
     "dialogDescription": "授权官方账号,然后粘贴 Zalo 返回的代码。",
     "step1Heading": "步骤 1 — 授权",

@@ -434,7 +434,7 @@
       "createLabel": "Create & Scan QR",
       "formBanner": "After creating, scan the QR code with WhatsApp to authenticate."
     },
-    "zaloOauth": {
+    "zaloOa": {
       "createLabel": "Create & Connect",
       "formBanner": "After creating, you'll approve access in Zalo and paste the returned code to complete authorization."
     }
@@ -502,7 +502,7 @@
     "connectedSuccess": "✅ WhatsApp connected successfully!",
     "tabQrCode": "QR Code"
   },
-  "zaloOauth": {
+  "zaloOa": {
     "dialogTitle": "Connect Zalo OA — {{name}}",
     "dialogDescription": "Authorize the Official Account, then paste the code returned by Zalo.",
     "step1Heading": "Step 1 — Authorize",

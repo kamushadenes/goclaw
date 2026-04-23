@@ -24,9 +24,9 @@ export function ZaloOAConnectBody({ flow, disabled }: Props) {
   return (
     <div className="flex flex-col gap-5 py-2">
       <section className="space-y-2">
-        <h3 className="text-sm font-medium">{t("zaloOauth.step1Heading")}</h3>
+        <h3 className="text-sm font-medium">{t("zaloOa.step1Heading")}</h3>
         {loadingConsent && (
-          <p className="text-sm text-muted-foreground">{t("zaloOauth.consentLoading")}</p>
+          <p className="text-sm text-muted-foreground">{t("zaloOa.consentLoading")}</p>
         )}
         {consentError && (
           <p className="text-sm text-destructive">{consentError}</p>
@@ -34,10 +34,10 @@ export function ZaloOAConnectBody({ flow, disabled }: Props) {
         {url && (
           <div className="flex items-center gap-2">
             <Input value={url} readOnly className="text-xs" />
-            <Button type="button" variant="outline" size="sm" onClick={handleCopy} aria-label={t("zaloOauth.copyUrl")}>
+            <Button type="button" variant="outline" size="sm" onClick={handleCopy} aria-label={t("zaloOa.copyUrl")}>
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={handleOpenInTab} aria-label={t("zaloOauth.openInTab")}>
+            <Button type="button" variant="outline" size="sm" onClick={handleOpenInTab} aria-label={t("zaloOa.openInTab")}>
               <ExternalLink className="h-4 w-4" />
             </Button>
           </div>
@@ -45,12 +45,12 @@ export function ZaloOAConnectBody({ flow, disabled }: Props) {
       </section>
 
       <section className="space-y-2">
-        <h3 className="text-sm font-medium">{t("zaloOauth.step2Heading")}</h3>
-        <p className="text-xs text-muted-foreground">{t("zaloOauth.pasteHelp")}</p>
+        <h3 className="text-sm font-medium">{t("zaloOa.step2Heading")}</h3>
+        <p className="text-xs text-muted-foreground">{t("zaloOa.pasteHelp")}</p>
         <Input
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          placeholder={t("zaloOauth.pastePlaceholder")}
+          placeholder={t("zaloOa.pastePlaceholder")}
           disabled={inputDisabled}
           autoFocus
         />
@@ -58,7 +58,7 @@ export function ZaloOAConnectBody({ flow, disabled }: Props) {
           <p className="text-sm text-destructive">{exchangeError}</p>
         )}
         {done && (
-          <p className="text-sm text-green-600 font-medium">{t("zaloOauth.connectedClosing")}</p>
+          <p className="text-sm text-green-600 font-medium">{t("zaloOa.connectedClosing")}</p>
         )}
       </section>
     </div>
