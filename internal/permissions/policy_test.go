@@ -317,10 +317,10 @@ func TestMethodRole_ZaloOAuth_IsAdmin(t *testing.T) {
 	// Both consent_url + exchange_code mutate channel_instance credentials
 	// (or generate state for an upcoming mutation), so they sit alongside
 	// channels.instances.create/update/delete in the admin-only block.
-	if got := MethodRole(protocol.MethodChannelInstancesZaloOAuthConsentURL); got != RoleAdmin {
+	if got := MethodRole(protocol.MethodChannelInstancesZaloOAConsentURL); got != RoleAdmin {
 		t.Fatalf("zalo_oauth.consent_url must be RoleAdmin; got %q", got)
 	}
-	if got := MethodRole(protocol.MethodChannelInstancesZaloOAuthExchangeCode); got != RoleAdmin {
+	if got := MethodRole(protocol.MethodChannelInstancesZaloOAExchangeCode); got != RoleAdmin {
 		t.Fatalf("zalo_oauth.exchange_code must be RoleAdmin; got %q", got)
 	}
 }

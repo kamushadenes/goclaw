@@ -114,8 +114,8 @@ const (
 	MethodChannelInstancesDelete = "channels.instances.delete"
 
 	// Zalo OA OAuth (paste-code consent flow).
-	MethodChannelInstancesZaloOAuthConsentURL   = "channels.instances.zalo_oauth.consent_url"
-	MethodChannelInstancesZaloOAuthExchangeCode = "channels.instances.zalo_oauth.exchange_code"
+	MethodChannelInstancesZaloOAConsentURL   = "channels.instances.zalo_oa.consent_url"
+	MethodChannelInstancesZaloOAExchangeCode = "channels.instances.zalo_oa.exchange_code"
 )
 
 // Agent links (inter-agent delegation)

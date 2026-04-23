@@ -228,8 +228,8 @@ func isAdminMethod(method string) bool {
 		protocol.MethodChannelInstancesCreate,
 		protocol.MethodChannelInstancesUpdate,
 		protocol.MethodChannelInstancesDelete,
-		protocol.MethodChannelInstancesZaloOAuthConsentURL,
-		protocol.MethodChannelInstancesZaloOAuthExchangeCode,
+		protocol.MethodChannelInstancesZaloOAConsentURL,
+		protocol.MethodChannelInstancesZaloOAExchangeCode,
 
 		// Pairing management (approve/revoke/list/deny require admin).
 		protocol.MethodPairingApprove,

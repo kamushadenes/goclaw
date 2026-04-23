@@ -55,8 +55,8 @@ func NewZaloOAuthMethods(s store.ChannelInstanceStore, msgBus *bus.MessageBus) *
 
 // Register wires the methods into the WS router.
 func (m *ZaloOAuthMethods) Register(router *gateway.MethodRouter) {
-	router.Register(protocol.MethodChannelInstancesZaloOAuthConsentURL, m.handleConsentURL)
-	router.Register(protocol.MethodChannelInstancesZaloOAuthExchangeCode, m.handleExchangeCode)
+	router.Register(protocol.MethodChannelInstancesZaloOAConsentURL, m.handleConsentURL)
+	router.Register(protocol.MethodChannelInstancesZaloOAExchangeCode, m.handleExchangeCode)
 }
 
 // handleConsentURL builds the Zalo authorization URL server-side so the
