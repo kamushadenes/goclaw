@@ -65,7 +65,7 @@ func TestZaloOAuthLifecycle(t *testing.T) {
 		TenantID:    tenantID,
 		Name:        fmt.Sprintf("zalo-oauth-int-%d", time.Now().UnixNano()),
 		DisplayName: "Zalo OAuth Integration",
-		ChannelType: channels.TypeZaloOAuth,
+		ChannelType: channels.TypeZaloOA,
 		AgentID:     agentID,
 		Credentials: credsJSON,
 		Config:      cfgJSON,
@@ -120,7 +120,7 @@ func TestZaloOAuthLifecycle(t *testing.T) {
 	if !ok {
 		t.Fatalf("factory returned %T, want *zalooauth.Channel", ch)
 	}
-	zch.SetType(channels.TypeZaloOAuth)
+	zch.SetType(channels.TypeZaloOA)
 	zch.SetTenantID(tenantID)
 	zch.SetAgentID(agentID.String())
 	zch.SetInstanceID(inst.ID)

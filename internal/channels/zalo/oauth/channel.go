@@ -119,7 +119,7 @@ func (c *Channel) ForceRefreshForTest() {
 }
 
 // Type returns the channel type identifier.
-func (c *Channel) Type() string { return channels.TypeZaloOAuth }
+func (c *Channel) Type() string { return channels.TypeZaloOA }
 
 // Start brings the channel up and spawns the safety-ticker goroutine.
 // Phase 04 will start the polling loop here.

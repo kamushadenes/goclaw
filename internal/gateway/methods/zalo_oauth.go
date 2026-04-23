@@ -80,7 +80,7 @@ func (m *ZaloOAuthMethods) handleConsentURL(ctx context.Context, client *gateway
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrNotFound, i18n.T(locale, i18n.MsgInstanceNotFound)))
 		return
 	}
-	if inst.ChannelType != channels.TypeZaloOAuth {
+	if inst.ChannelType != channels.TypeZaloOA {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgZaloOAuthInvalidChannelType)))
 		return
 	}
@@ -141,7 +141,7 @@ func (m *ZaloOAuthMethods) handleExchangeCode(ctx context.Context, client *gatew
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrNotFound, i18n.T(locale, i18n.MsgInstanceNotFound)))
 		return
 	}
-	if inst.ChannelType != channels.TypeZaloOAuth {
+	if inst.ChannelType != channels.TypeZaloOA {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgZaloOAuthInvalidChannelType)))
 		return
 	}
