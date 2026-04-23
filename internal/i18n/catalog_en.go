@@ -225,16 +225,16 @@ func init() {
 		MsgHookBuiltinReadOnly:         "builtin hooks are read-only except for the enabled toggle",
 
 		// Zalo OA OAuth channel
-		MsgZaloOAuthCodeExchangeFailed: "zalo oauth code exchange failed: %s",
-		MsgZaloOAuthInvalidChannelType: "instance is not a zalo_oauth channel",
-		MsgZaloOAuthConnected:          "zalo official account connected: %s",
-		MsgZaloOAuthInvalidState:       "oauth state token is invalid or expired",
-		MsgZaloOAuthRefreshFailed:      "zalo oauth token refresh failed: %s",
-		MsgZaloOAuthReauthRequired:     "zalo oauth re-authorization required — paste a new consent code",
-		MsgZaloOAuthTokenInvalid:       "zalo oauth access token rejected by API",
-		MsgZaloOAuthMediaTooLarge:      "media exceeds size limit (%d MB)",
-		MsgZaloOAuthWindowExpired:      "48-hour user-interaction window expired — recipient must message the OA first",
-		MsgZaloOAuthRateLimited:        "zalo oauth rate limited; backing off polling for 30 seconds",
+		MsgZaloOACodeExchangeFailed: "zalo oauth code exchange failed: %s",
+		MsgZaloOAInvalidChannelType: "instance is not a zalo_oa channel",
+		MsgZaloOAConnected:          "zalo official account connected: %s",
+		MsgZaloOAInvalidState:       "oauth state token is invalid or expired",
+		MsgZaloOARefreshFailed:      "zalo oauth token refresh failed: %s",
+		MsgZaloOAReauthRequired:     "zalo oauth re-authorization required — paste a new consent code",
+		MsgZaloOATokenInvalid:       "zalo oauth access token rejected by API",
+		MsgZaloOAMediaTooLarge:      "media exceeds size limit (%d MB)",
+		MsgZaloOAWindowExpired:      "48-hour user-interaction window expired — recipient must message the OA first",
+		MsgZaloOARateLimited:        "zalo oauth rate limited; backing off polling for 30 seconds",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Forwarded to %s as requested: %q",

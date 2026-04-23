@@ -81,7 +81,7 @@ func (m *ZaloOAuthMethods) handleConsentURL(ctx context.Context, client *gateway
 		return
 	}
 	if inst.ChannelType != channels.TypeZaloOA {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgZaloOAuthInvalidChannelType)))
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgZaloOAInvalidChannelType)))
 		return
 	}
 
@@ -132,7 +132,7 @@ func (m *ZaloOAuthMethods) handleExchangeCode(ctx context.Context, client *gatew
 		return
 	}
 	if !m.consumeState(instID, params.State) {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgZaloOAuthInvalidState)))
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgZaloOAInvalidState)))
 		return
 	}
 
@@ -142,13 +142,13 @@ func (m *ZaloOAuthMethods) handleExchangeCode(ctx context.Context, client *gatew
 		return
 	}
 	if inst.ChannelType != channels.TypeZaloOA {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgZaloOAuthInvalidChannelType)))
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgZaloOAInvalidChannelType)))
 		return
 	}
 
 	creds, err := zalooa.LoadCreds(inst.Credentials)
 	if err != nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, i18n.T(locale, i18n.MsgZaloOAuthCodeExchangeFailed, err.Error())))
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, i18n.T(locale, i18n.MsgZaloOACodeExchangeFailed, err.Error())))
 		return
 	}
 
@@ -156,7 +156,7 @@ func (m *ZaloOAuthMethods) handleExchangeCode(ctx context.Context, client *gatew
 	tok, err := httpClient.ExchangeCode(ctx, creds.AppID, creds.SecretKey, params.Code)
 	if err != nil {
 		slog.Warn("zalo_oauth.exchange_failed", "instance_id", instID, "oa_id", creds.OAID, "error", err)
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, i18n.T(locale, i18n.MsgZaloOAuthCodeExchangeFailed, err.Error())))
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, i18n.T(locale, i18n.MsgZaloOACodeExchangeFailed, err.Error())))
 		return
 	}
 	creds.WithTokens(tok)
@@ -169,11 +169,11 @@ func (m *ZaloOAuthMethods) handleExchangeCode(ctx context.Context, client *gatew
 	}
 	credsBytes, err := creds.Marshal()
 	if err != nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, i18n.T(locale, i18n.MsgZaloOAuthCodeExchangeFailed, err.Error())))
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, i18n.T(locale, i18n.MsgZaloOACodeExchangeFailed, err.Error())))
 		return
 	}
 	if err := m.store.Update(ctx, instID, map[string]any{"credentials": credsBytes}); err != nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, i18n.T(locale, i18n.MsgZaloOAuthCodeExchangeFailed, err.Error())))
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, i18n.T(locale, i18n.MsgZaloOACodeExchangeFailed, err.Error())))
 		return
 	}
 	m.emitCacheInvalidate()

@@ -225,16 +225,16 @@ func init() {
 		MsgHookBuiltinReadOnly:         "内置钩子只读,仅允许切换启用状态",
 
 		// Zalo OA OAuth 渠道
-		MsgZaloOAuthCodeExchangeFailed: "Zalo OAuth 授权码交换失败:%s",
-		MsgZaloOAuthInvalidChannelType: "实例不是 zalo_oauth 类型",
-		MsgZaloOAuthConnected:          "已连接 Zalo 公众号:%s",
-		MsgZaloOAuthInvalidState:       "OAuth state 令牌无效或已过期",
-		MsgZaloOAuthRefreshFailed:      "Zalo OAuth 刷新令牌失败:%s",
-		MsgZaloOAuthReauthRequired:     "需要重新授权 Zalo OAuth — 请粘贴新的同意码",
-		MsgZaloOAuthTokenInvalid:       "Zalo API 拒绝了 access token",
-		MsgZaloOAuthMediaTooLarge:      "媒体超过大小限制(%d MB)",
-		MsgZaloOAuthWindowExpired:      "48 小时互动窗口已过期 — 用户需先向 OA 发送消息",
-		MsgZaloOAuthRateLimited:        "Zalo OAuth 被限流;暂停轮询 30 秒",
+		MsgZaloOACodeExchangeFailed: "Zalo OAuth 授权码交换失败:%s",
+		MsgZaloOAInvalidChannelType: "实例不是 zalo_oa 类型",
+		MsgZaloOAConnected:          "已连接 Zalo 公众号:%s",
+		MsgZaloOAInvalidState:       "OAuth state 令牌无效或已过期",
+		MsgZaloOARefreshFailed:      "Zalo OAuth 刷新令牌失败:%s",
+		MsgZaloOAReauthRequired:     "需要重新授权 Zalo OAuth — 请粘贴新的同意码",
+		MsgZaloOATokenInvalid:       "Zalo API 拒绝了 access token",
+		MsgZaloOAMediaTooLarge:      "媒体超过大小限制(%d MB)",
+		MsgZaloOAWindowExpired:      "48 小时互动窗口已过期 — 用户需先向 OA 发送消息",
+		MsgZaloOARateLimited:        "Zalo OAuth 被限流;暂停轮询 30 秒",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 已按请求转发至 %s:%q",

@@ -225,16 +225,16 @@ func init() {
 		MsgHookBuiltinReadOnly:         "hook dựng sẵn chỉ cho phép bật/tắt, không thể chỉnh sửa",
 
 		// Zalo OA OAuth channel
-		MsgZaloOAuthCodeExchangeFailed: "đổi mã xác thực Zalo OAuth thất bại: %s",
-		MsgZaloOAuthInvalidChannelType: "kênh không phải loại zalo_oauth",
-		MsgZaloOAuthConnected:          "đã kết nối tài khoản Zalo OA: %s",
-		MsgZaloOAuthInvalidState:       "mã state OAuth không hợp lệ hoặc đã hết hạn",
-		MsgZaloOAuthRefreshFailed:      "làm mới token Zalo OAuth thất bại: %s",
-		MsgZaloOAuthReauthRequired:     "cần cấp quyền lại Zalo OAuth — hãy dán mã consent mới",
-		MsgZaloOAuthTokenInvalid:       "API Zalo từ chối access token",
-		MsgZaloOAuthMediaTooLarge:      "tệp đính kèm vượt quá giới hạn (%d MB)",
-		MsgZaloOAuthWindowExpired:      "đã quá cửa sổ tương tác 48 giờ — người dùng cần nhắn cho OA trước",
-		MsgZaloOAuthRateLimited:        "Zalo OAuth bị giới hạn tốc độ; tạm dừng polling 30 giây",
+		MsgZaloOACodeExchangeFailed: "đổi mã xác thực Zalo OAuth thất bại: %s",
+		MsgZaloOAInvalidChannelType: "kênh không phải loại zalo_oa",
+		MsgZaloOAConnected:          "đã kết nối tài khoản Zalo OA: %s",
+		MsgZaloOAInvalidState:       "mã state OAuth không hợp lệ hoặc đã hết hạn",
+		MsgZaloOARefreshFailed:      "làm mới token Zalo OAuth thất bại: %s",
+		MsgZaloOAReauthRequired:     "cần cấp quyền lại Zalo OAuth — hãy dán mã consent mới",
+		MsgZaloOATokenInvalid:       "API Zalo từ chối access token",
+		MsgZaloOAMediaTooLarge:      "tệp đính kèm vượt quá giới hạn (%d MB)",
+		MsgZaloOAWindowExpired:      "đã quá cửa sổ tương tác 48 giờ — người dùng cần nhắn cho OA trước",
+		MsgZaloOARateLimited:        "Zalo OAuth bị giới hạn tốc độ; tạm dừng polling 30 giây",
 
 		// Message tool cross-target forward notice
 		MessageCrossTargetForwarded: "📤 Đã forward sang %s theo yêu cầu: %q",
