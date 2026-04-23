@@ -114,6 +114,7 @@ const (
 	// --- Skills ---
 	MsgSkillsUpdateNotSupported = "error.skills_update_not_supported" // "skills.update not supported for file-based skills"
 	MsgCannotResolveSkillID     = "error.cannot_resolve_skill_id"     // "cannot resolve skill ID for file-based skill"
+	MsgInvalidVisibility        = "error.invalid_visibility"          // "invalid visibility %q: must be one of private, public"
 
 	// --- Logs ---
 	MsgInvalidLogAction = "error.invalid_log_action" // "action must be 'start' or 'stop'"

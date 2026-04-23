@@ -24,6 +24,8 @@ func TestIsSkillVisibleTo(t *testing.T) {
 		{"private hidden from non-owner", bob, "private", false, false},
 		{"private with no owner treated as public", "", "private", false, true},
 		{"unknown enum fails closed", bob, "team", false, false},
+		{"uppercase private matched for owner", alice, "PRIVATE", false, true},
+		{"whitespace public treated as public", bob, "  public  ", false, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

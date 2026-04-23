@@ -1,6 +1,9 @@
 package store
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // IsSkillVisibleTo returns true if the caller identified by ctx can discover
 // the given skill. Rules:
@@ -17,7 +20,9 @@ func IsSkillVisibleTo(ctx context.Context, ownerID, visibility string, isSystem 
 	if isSystem {
 		return true
 	}
-	switch visibility {
+	// Normalize to defend against historical rows with mixed case / whitespace
+	// that bypassed the write-path normalizer.
+	switch strings.ToLower(strings.TrimSpace(visibility)) {
 	case "", "public":
 		return true
 	case "private":

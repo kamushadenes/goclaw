@@ -210,20 +210,9 @@ func (m *SkillsMethods) handleUpdate(ctx context.Context, client *gateway.Client
 		return
 	}
 
-	// Validate visibility enum if present — fail closed before mutating the DB.
-	if v, ok := params.Updates["visibility"]; ok {
-		vs, _ := v.(string)
-		if err := skills.ValidateVisibility(vs); err != nil {
-			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, err.Error()))
-			return
-		}
-		if vs != "" {
-			params.Updates["visibility"] = skills.NormalizeVisibility(vs)
-		}
-	}
-
-	// Ownership check: only skill owner or admin can update.
+	// Ownership check first: only skill owner or admin can update.
 	// Fail-closed: if store doesn't implement skillOwnerGetter, deny non-admin callers.
+	// Auth-before-validate avoids leaking skill-existence info via validation errors.
 	if !permissions.HasMinRole(client.Role(), permissions.RoleAdmin) {
 		ownerGetter, ok := m.store.(skillOwnerGetter)
 		if !ok {
@@ -233,6 +222,18 @@ func (m *SkillsMethods) handleUpdate(ctx context.Context, client *gateway.Client
 		if ownerID, found := ownerGetter.GetSkillOwnerID(skillID); found && ownerID != client.UserID() {
 			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrUnauthorized, i18n.T(locale, i18n.MsgPermissionDenied, "skills.update")))
 			return
+		}
+	}
+
+	// Validate visibility enum if present — fail closed before mutating the DB.
+	if v, ok := params.Updates["visibility"]; ok {
+		vs, _ := v.(string)
+		if err := skills.ValidateVisibility(vs); err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgInvalidVisibility, vs)))
+			return
+		}
+		if vs != "" {
+			params.Updates["visibility"] = skills.NormalizeVisibility(vs)
 		}
 	}
 

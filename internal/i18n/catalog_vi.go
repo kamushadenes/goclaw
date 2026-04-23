@@ -113,6 +113,7 @@ func init() {
 		// Skills
 		MsgSkillsUpdateNotSupported: "skills.update không được hỗ trợ với skill dựa trên tệp",
 		MsgCannotResolveSkillID:     "không thể xác định ID skill dựa trên tệp",
+		MsgInvalidVisibility:        "visibility không hợp lệ %q: phải là private hoặc public",
 
 		// Logs
 		MsgInvalidLogAction: "action phải là 'start' hoặc 'stop'",

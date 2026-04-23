@@ -113,6 +113,7 @@ func init() {
 		// Skills
 		MsgSkillsUpdateNotSupported: "skills.update not supported for file-based skills",
 		MsgCannotResolveSkillID:     "cannot resolve skill ID for file-based skill",
+		MsgInvalidVisibility:        "invalid visibility %q: must be one of private, public",
 
 		// Logs
 		MsgInvalidLogAction: "action must be 'start' or 'stop'",

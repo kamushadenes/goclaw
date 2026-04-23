@@ -113,6 +113,7 @@ func init() {
 		// Skills
 		MsgSkillsUpdateNotSupported: "基于文件的Skill不支持 skills.update",
 		MsgCannotResolveSkillID:     "无法解析基于文件的Skill ID",
+		MsgInvalidVisibility:        "无效的 visibility %q：必须为 private 或 public",
 
 		// Logs
 		MsgInvalidLogAction: "action 必须是 'start' 或 'stop'",
