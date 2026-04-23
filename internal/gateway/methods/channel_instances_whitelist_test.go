@@ -5,7 +5,7 @@ import "testing"
 // TestIsValidChannelType_WS guards the WebSocket-side whitelist.
 // Pre-existing bug surfaced by this test: facebook + pancake were missing
 // from the WS list while the HTTP list at internal/http/channel_instances.go
-// already accepts them. We add zalo_oauth alongside the bug fix.
+// already accepts them.
 func TestIsValidChannelType_WS(t *testing.T) {
 	t.Parallel()
 
@@ -15,14 +15,15 @@ func TestIsValidChannelType_WS(t *testing.T) {
 		"slack":         true,
 		"whatsapp":      true,
 		"zalo_oa":       true,
+		"zalo_bot":      true,
 		"zalo_personal": true,
-		"zalo_oauth":    true,
 		"feishu":        true,
 		"facebook":      true,
 		"pancake":       true,
 		"unknown":       false,
 		"":              false,
 		"zalo":          false,
+		"zalo_oauth":    false,
 	}
 
 	for ct, want := range cases {
