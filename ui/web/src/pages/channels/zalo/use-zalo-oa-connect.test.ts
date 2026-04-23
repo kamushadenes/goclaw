@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractCode } from "./use-zalo-oauth-connect";
+import { extractCode } from "./use-zalo-oa-connect";
 
 describe("extractCode", () => {
   const stashedState = "db8fa679f0d522a652c70b5f935348c1f01f7a82d576a5596d89c32960364fcb";

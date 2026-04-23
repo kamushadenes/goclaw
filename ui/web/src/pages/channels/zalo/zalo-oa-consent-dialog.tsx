@@ -8,10 +8,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { useZaloOAuthConnect } from "./use-zalo-oauth-connect";
-import { ZaloOAuthConnectBody } from "./zalo-oauth-connect-body";
+import { useZaloOAConnect } from "./use-zalo-oa-connect";
+import { ZaloOAConnectBody } from "./zalo-oa-connect-body";
 
-interface ZaloOAuthPasteCodeDialogProps {
+interface ZaloOAConsentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   instanceId: string;
@@ -19,15 +19,15 @@ interface ZaloOAuthPasteCodeDialogProps {
   onSuccess: () => void;
 }
 
-export function ZaloOAuthPasteCodeDialog({
+export function ZaloOAConsentDialog({
   open,
   onOpenChange,
   instanceId,
   instanceName,
   onSuccess,
-}: ZaloOAuthPasteCodeDialogProps) {
+}: ZaloOAConsentDialogProps) {
   const { t } = useTranslation("channels");
-  const flow = useZaloOAuthConnect(instanceId, open, onSuccess);
+  const flow = useZaloOAConnect(instanceId, open, onSuccess);
 
   // Auto-close the dialog shortly after success so the user sees the check.
   useEffect(() => {
@@ -47,7 +47,7 @@ export function ZaloOAuthPasteCodeDialog({
           <DialogDescription>{t("zaloOauth.dialogDescription")}</DialogDescription>
         </DialogHeader>
 
-        <ZaloOAuthConnectBody flow={flow} />
+        <ZaloOAConnectBody flow={flow} />
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={flow.submitting}>

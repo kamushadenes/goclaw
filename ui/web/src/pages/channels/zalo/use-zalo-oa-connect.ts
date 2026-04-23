@@ -50,7 +50,7 @@ interface ExchangeResp {
   expires_at?: string;
 }
 
-export interface UseZaloOAuthConnectResult {
+export interface UseZaloOAConnectResult {
   url: string;
   code: string;
   setCode: (c: string) => void;
@@ -74,11 +74,11 @@ export interface UseZaloOAuthConnectResult {
  *                     while the dialog is still mounting.
  * @param onSuccess    Invoked once when exchange completes successfully.
  */
-export function useZaloOAuthConnect(
+export function useZaloOAConnect(
   instanceId: string,
   active: boolean,
   onSuccess: () => void,
-): UseZaloOAuthConnectResult {
+): UseZaloOAConnectResult {
   const consent = useWsCall<ConsentResp>("channels.instances.zalo_oauth.consent_url");
   const exchange = useWsCall<ExchangeResp>("channels.instances.zalo_oauth.exchange_code");
 

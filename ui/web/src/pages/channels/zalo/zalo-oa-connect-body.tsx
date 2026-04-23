@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import { Check, Copy, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { UseZaloOAuthConnectResult } from "./use-zalo-oauth-connect";
+import type { UseZaloOAConnectResult } from "./use-zalo-oa-connect";
 
 // Shared two-step body for the zalo_oauth paste-code flow. Rendered inside
 // either a Dialog (reauth) or the create-wizard step container. The caller
@@ -10,11 +10,11 @@ import type { UseZaloOAuthConnectResult } from "./use-zalo-oauth-connect";
 // (so wizard Skip/Connect buttons differ from reauth Cancel/Connect).
 
 interface Props {
-  flow: UseZaloOAuthConnectResult;
+  flow: UseZaloOAConnectResult;
   disabled?: boolean; // wizard may disable while parent is busy
 }
 
-export function ZaloOAuthConnectBody({ flow, disabled }: Props) {
+export function ZaloOAConnectBody({ flow, disabled }: Props) {
   const { t } = useTranslation("channels");
   const { url, code, setCode, copied, done, handleCopy, handleOpenInTab,
     submitting, loadingConsent, consentError, exchangeError } = flow;
