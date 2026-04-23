@@ -16,7 +16,7 @@ var schemaSQL string
 
 // SchemaVersion is the current SQLite schema version.
 // Bump this when adding new migration steps below.
-const SchemaVersion = 25
+const SchemaVersion = 26
 
 // migrations maps version → SQL to apply when upgrading FROM that version.
 // schema.sql always represents the LATEST full schema (for fresh DBs).
@@ -501,6 +501,13 @@ CREATE TRIGGER IF NOT EXISTS trg_vault_docs_scope_consistency_upd
 	// SQLite lacks regex by default — skip backfill (desktop is single-user; cross-chat risk minimal).
 	24: `ALTER TABLE vault_documents ADD COLUMN chat_id TEXT;
 CREATE INDEX IF NOT EXISTS idx_vault_docs_team_chat ON vault_documents(team_id, chat_id) WHERE team_id IS NOT NULL;`,
+
+	// Version 25 → 26: rename Zalo channel types to align with Zalo's own
+	// product taxonomy (mirrors PG migration 000057). Three-step swap via
+	// zalo_oa_tmp sentinel — defensive against future unique constraints.
+	25: `UPDATE channel_instances SET channel_type = 'zalo_oa_tmp' WHERE channel_type = 'zalo_oauth';
+UPDATE channel_instances SET channel_type = 'zalo_bot'    WHERE channel_type = 'zalo_oa';
+UPDATE channel_instances SET channel_type = 'zalo_oa'     WHERE channel_type = 'zalo_oa_tmp';`,
 }
 
 // addHooksTables is the SQLite incremental migration for schema v19 → v20.
