@@ -16,6 +16,7 @@ type SkillInfo struct {
 	Source      string   `json:"source" db:"-"`
 	Description string   `json:"description" db:"description"`
 	Visibility  string   `json:"visibility,omitempty" db:"visibility"`
+	OwnerID     string   `json:"owner_id,omitempty" db:"owner_id"`
 	Tags        []string `json:"tags,omitempty" db:"tags"`
 	Version     int      `json:"version,omitempty" db:"version"`
 	IsSystem    bool     `json:"is_system,omitempty" db:"is_system"`

@@ -87,11 +87,16 @@ func (t *SkillManageTool) Parameters() map[string]any {
 			},
 			"find": map[string]any{
 				"type":        "string",
-				"description": "Exact text to find in the current SKILL.md. Required for patch.",
+				"description": "Exact text to find in the current SKILL.md. Required for patch unless only 'visibility' is being updated.",
 			},
 			"replace": map[string]any{
 				"type":        "string",
 				"description": "Replacement text. Required for patch.",
+			},
+			"visibility": map[string]any{
+				"type":        "string",
+				"enum":        []string{skills.VisibilityPrivate, skills.VisibilityPublic},
+				"description": "Skill visibility. For create: defaults to 'private'. For patch: updates who can discover the skill without creating a new version.",
 			},
 		},
 		"required": []string{"action"},
@@ -124,6 +129,12 @@ func (t *SkillManageTool) executeCreate(ctx context.Context, args map[string]any
 	if len(content) > maxSkillContentSize {
 		return ErrorResult(fmt.Sprintf("content too large (%d bytes, max %d)", len(content), maxSkillContentSize))
 	}
+
+	rawVisibility, _ := args["visibility"].(string)
+	if err := skills.ValidateVisibility(rawVisibility); err != nil {
+		return ErrorResult(err.Error())
+	}
+	visibility := skills.NormalizeVisibility(rawVisibility)
 
 	// Security scan before any disk write
 	violations, safe := skills.GuardSkillContent(content)
@@ -183,7 +194,7 @@ func (t *SkillManageTool) executeCreate(ctx context.Context, args map[string]any
 		Slug:        slug,
 		Description: &desc,
 		OwnerID:     ownerID,
-		Visibility:  "private",
+		Visibility:  visibility,
 		Version:     version,
 		FilePath:    destDir,
 		FileSize:    fileSize,
@@ -238,11 +249,16 @@ func (t *SkillManageTool) executePatch(ctx context.Context, args map[string]any)
 	slug, _ := args["slug"].(string)
 	find, _ := args["find"].(string)
 	replace, _ := args["replace"].(string)
+	rawVisibility, _ := args["visibility"].(string)
 	if slug == "" {
 		return ErrorResult("slug is required for action=patch")
 	}
-	if find == "" {
-		return ErrorResult("find is required for action=patch")
+	if err := skills.ValidateVisibility(rawVisibility); err != nil {
+		return ErrorResult(err.Error())
+	}
+	// Patch requires at least one of: content edit (find) or visibility change.
+	if find == "" && rawVisibility == "" {
+		return ErrorResult("patch requires either 'find' (content edit) or 'visibility' (metadata update)")
 	}
 
 	info, ok := t.skills.GetSkill(ctx, slug)
@@ -264,6 +280,26 @@ func (t *SkillManageTool) executePatch(ctx context.Context, args map[string]any)
 	// three of their skills regardless of when they were created.
 	if !isOwnerOfSkill(ctx, t.skills, slug) {
 		return ErrorResult(fmt.Sprintf("cannot manage skill %q: you are not the owner", slug))
+	}
+
+	// Visibility-only patch path: no content change, no new version.
+	if find == "" && rawVisibility != "" {
+		skillID, err := uuid.Parse(info.ID)
+		if err != nil {
+			return ErrorResult(fmt.Sprintf("invalid skill ID in database: %v", err))
+		}
+		newVisibility := skills.NormalizeVisibility(rawVisibility)
+		if err := t.skills.UpdateSkill(ctx, skillID, map[string]any{
+			"visibility": newVisibility,
+			"updated_at": time.Now(),
+		}); err != nil {
+			return ErrorResult(fmt.Sprintf("failed to update skill visibility: %v", err))
+		}
+		slog.Info("skill_manage: visibility updated", "slug", slug, "visibility", newVisibility)
+		if t.loader != nil {
+			t.loader.BumpVersion()
+		}
+		return NewResult(fmt.Sprintf("Skill %q visibility set to %s.", slug, newVisibility))
 	}
 
 	// Read current SKILL.md from latest version
@@ -316,13 +352,17 @@ func (t *SkillManageTool) executePatch(ctx context.Context, args map[string]any)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("invalid skill ID in database: %v", err))
 	}
-	if err := t.skills.UpdateSkill(ctx, skillID, map[string]any{
+	updates := map[string]any{
 		"version":    newVer,
 		"file_path":  destDir,
 		"file_size":  fileSize,
 		"file_hash":  &fileHash,
 		"updated_at": time.Now(),
-	}); err != nil {
+	}
+	if rawVisibility != "" {
+		updates["visibility"] = skills.NormalizeVisibility(rawVisibility)
+	}
+	if err := t.skills.UpdateSkill(ctx, skillID, updates); err != nil {
 		return ErrorResult(fmt.Sprintf("failed to update skill in database: %v", err))
 	}
 

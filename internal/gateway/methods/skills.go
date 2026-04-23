@@ -10,6 +10,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
+	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
@@ -37,6 +38,12 @@ func (m *SkillsMethods) Register(router *gateway.MethodRouter) {
 
 func (m *SkillsMethods) handleList(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	allSkills := m.store.ListSkills(ctx)
+
+	// Visibility filter: non-admins see system skills, public skills, and
+	// their own private skills. Admins see everything in the tenant.
+	if !permissions.HasMinRole(client.Role(), permissions.RoleAdmin) {
+		allSkills = store.FilterVisibleSkills(ctx, allSkills)
+	}
 
 	result := make([]map[string]any, 0, len(allSkills))
 	for _, s := range allSkills {
@@ -112,6 +119,13 @@ func (m *SkillsMethods) handleGet(ctx context.Context, client *gateway.Client, r
 
 	info, ok := m.store.GetSkill(ctx, params.Name)
 	if !ok {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrNotFound, i18n.T(locale, i18n.MsgNotFound, "skill", params.Name)))
+		return
+	}
+
+	// Visibility gate: hide private skills from non-owners (admins bypass).
+	if !permissions.HasMinRole(client.Role(), permissions.RoleAdmin) &&
+		!store.IsSkillVisibleTo(ctx, info.OwnerID, info.Visibility, info.IsSystem) {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrNotFound, i18n.T(locale, i18n.MsgNotFound, "skill", params.Name)))
 		return
 	}
@@ -194,6 +208,18 @@ func (m *SkillsMethods) handleUpdate(ctx context.Context, client *gateway.Client
 	if params.Updates == nil || len(params.Updates) == 0 {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgRequired, "updates")))
 		return
+	}
+
+	// Validate visibility enum if present — fail closed before mutating the DB.
+	if v, ok := params.Updates["visibility"]; ok {
+		vs, _ := v.(string)
+		if err := skills.ValidateVisibility(vs); err != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, err.Error()))
+			return
+		}
+		if vs != "" {
+			params.Updates["visibility"] = skills.NormalizeVisibility(vs)
+		}
 	}
 
 	// Ownership check: only skill owner or admin can update.

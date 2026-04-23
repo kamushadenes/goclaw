@@ -90,13 +90,13 @@ func (s *PGSkillStore) BuildSummary(ctx context.Context, allowList []string) str
 
 func (s *PGSkillStore) GetSkill(ctx context.Context, name string) (*store.SkillInfo, bool) {
 	var id uuid.UUID
-	var skillName, slug, visibility string
+	var skillName, slug, visibility, ownerID string
 	var desc *string
 	var tags []string
 	var version int
 	var isSystem bool
 	var filePath *string
-	q := "SELECT id, name, slug, description, visibility, tags, version, is_system, file_path FROM skills WHERE slug = $1 AND status = 'active'"
+	q := "SELECT id, name, slug, description, visibility, owner_id, tags, version, is_system, file_path FROM skills WHERE slug = $1 AND status = 'active'"
 	args := []any{name}
 	if !store.IsCrossTenant(ctx) {
 		tid := store.TenantIDFromContext(ctx)
@@ -106,12 +106,13 @@ func (s *PGSkillStore) GetSkill(ctx context.Context, name string) (*store.SkillI
 		q += " AND (is_system = true OR tenant_id = $2)"
 		args = append(args, tid)
 	}
-	err := s.db.QueryRowContext(ctx, q, args...).Scan(&id, &skillName, &slug, &desc, &visibility, pq.Array(&tags), &version, &isSystem, &filePath)
+	err := s.db.QueryRowContext(ctx, q, args...).Scan(&id, &skillName, &slug, &desc, &visibility, &ownerID, pq.Array(&tags), &version, &isSystem, &filePath)
 	if err != nil {
 		return nil, false
 	}
 	info := buildSkillInfo(id.String(), skillName, slug, desc, version, s.baseDir, filePath)
 	info.Visibility = visibility
+	info.OwnerID = ownerID
 	info.Tags = tags
 	info.IsSystem = isSystem
 	return &info, true
@@ -121,9 +122,11 @@ func (s *PGSkillStore) FilterSkills(ctx context.Context, allowList []string) []s
 	all := s.ListSkills(ctx)
 	var filtered []store.SkillInfo
 	if allowList == nil {
-		// No allowList → return all enabled skills (for agent injection)
+		// No allowList → return all enabled skills visible to the caller
+		// (for agent injection). Private skills owned by others are hidden
+		// so they don't leak across tenant members.
 		for _, sk := range all {
-			if sk.Enabled {
+			if sk.Enabled && store.IsSkillVisibleTo(ctx, sk.OwnerID, sk.Visibility, sk.IsSystem) {
 				filtered = append(filtered, sk)
 			}
 		}
@@ -148,14 +151,14 @@ func (s *PGSkillStore) FilterSkills(ctx context.Context, allowList []string) []s
 // Used by admin operations (e.g. toggle) that need full skill info.
 // Tenant filter: system skills visible globally, custom skills scoped to tenant.
 func (s *PGSkillStore) GetSkillByID(ctx context.Context, id uuid.UUID) (store.SkillInfo, bool) {
-	var name, slug, visibility, status string
+	var name, slug, visibility, ownerID, status string
 	var desc *string
 	var tags []string
 	var version int
 	var isSystem, enabled bool
 	var depsRaw []byte
 	var filePath *string
-	q := `SELECT name, slug, description, visibility, tags, version, is_system, status, enabled, deps, file_path
+	q := `SELECT name, slug, description, visibility, owner_id, tags, version, is_system, status, enabled, deps, file_path
 		 FROM skills WHERE id = $1`
 	args := []any{id}
 	if !store.IsCrossTenant(ctx) {
@@ -166,12 +169,13 @@ func (s *PGSkillStore) GetSkillByID(ctx context.Context, id uuid.UUID) (store.Sk
 		q += " AND (is_system = true OR tenant_id = $2)"
 		args = append(args, tid)
 	}
-	err := s.db.QueryRowContext(ctx, q, args...).Scan(&name, &slug, &desc, &visibility, pq.Array(&tags), &version, &isSystem, &status, &enabled, &depsRaw, &filePath)
+	err := s.db.QueryRowContext(ctx, q, args...).Scan(&name, &slug, &desc, &visibility, &ownerID, pq.Array(&tags), &version, &isSystem, &status, &enabled, &depsRaw, &filePath)
 	if err != nil {
 		return store.SkillInfo{}, false
 	}
 	info := buildSkillInfo(id.String(), name, slug, desc, version, s.baseDir, filePath)
 	info.Visibility = visibility
+	info.OwnerID = ownerID
 	info.Tags = tags
 	info.IsSystem = isSystem
 	info.Status = status

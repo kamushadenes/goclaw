@@ -71,7 +71,7 @@ func (s *SQLiteSkillStore) ListSkills(ctx context.Context) []store.SkillInfo {
 	s.mu.RUnlock()
 
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, slug, description, visibility, tags, version, is_system, status, enabled, deps, frontmatter, file_path
+		`SELECT id, name, slug, description, visibility, owner_id, tags, version, is_system, status, enabled, deps, frontmatter, file_path
 		 FROM skills WHERE (status IN ('active', 'archived') OR is_system = 1) AND (is_system = 1 OR tenant_id = ?)
 		 ORDER BY name`, tid)
 	if err != nil {
@@ -82,19 +82,20 @@ func (s *SQLiteSkillStore) ListSkills(ctx context.Context) []store.SkillInfo {
 	var result []store.SkillInfo
 	for rows.Next() {
 		var id uuid.UUID
-		var name, slug, visibility, status string
+		var name, slug, visibility, ownerID, status string
 		var desc *string
 		var tagsJSON []byte
 		var version int
 		var isSystem, enabled bool
 		var depsRaw, fmRaw []byte
 		var filePath *string
-		if err := rows.Scan(&id, &name, &slug, &desc, &visibility, &tagsJSON, &version,
+		if err := rows.Scan(&id, &name, &slug, &desc, &visibility, &ownerID, &tagsJSON, &version,
 			&isSystem, &status, &enabled, &depsRaw, &fmRaw, &filePath); err != nil {
 			continue
 		}
 		info := buildSkillInfo(id.String(), name, slug, desc, version, s.baseDir, filePath)
 		info.Visibility = visibility
+		info.OwnerID = ownerID
 		scanJSONStringArray(tagsJSON, &info.Tags)
 		info.IsSystem = isSystem
 		info.Status = status

@@ -18,6 +18,7 @@ type skillInfoRow struct {
 	Slug       string         `db:"slug"`
 	Desc       *string        `db:"description"`
 	Visibility string         `db:"visibility"`
+	OwnerID    string         `db:"owner_id"`
 	Tags       pq.StringArray `db:"tags"`
 	Version    int            `db:"version"`
 	IsSystem   bool           `db:"is_system"`
@@ -37,6 +38,7 @@ type skillInfoRowWithFrontmatter struct {
 func (r *skillInfoRow) toSkillInfo(baseDir string) store.SkillInfo {
 	info := buildSkillInfo(r.ID.String(), r.Name, r.Slug, r.Desc, r.Version, baseDir, r.FilePath)
 	info.Visibility = r.Visibility
+	info.OwnerID = r.OwnerID
 	info.Tags = []string(r.Tags)
 	info.IsSystem = r.IsSystem
 	info.Status = r.Status
