@@ -11,15 +11,6 @@ import (
 
 const maxFilenameLen = 200 // Zalo's observed cap
 
-// Upload endpoints live on /v2.0/* (empirically verified 2026-04-20
-// against live Zalo OA — v3.0 variants return 404). The message-send
-// endpoint /v3.0/oa/message/cs stays on v3.0.
-const (
-	uploadImagePath = "/v2.0/oa/upload/image"
-	uploadFilePath  = "/v2.0/oa/upload/file"
-	uploadGIFPath   = "/v2.0/oa/upload/gif"
-)
-
 // uploadImage uploads raw image bytes to Zalo and returns the upload `token`
 // that subsequent send-attachment calls reference. Filename carries a real
 // extension because Zalo's endpoint uses it to validate the payload type
@@ -34,7 +25,7 @@ func (c *Channel) uploadImage(ctx context.Context, data []byte, mime string) (st
 	if mime == "image/png" {
 		filename = "image.png"
 	}
-	raw, err := c.client.apiPostMultipart(ctx, uploadImagePath, "file", filename, data, nil, tok)
+	raw, err := c.client.apiPostMultipart(ctx, pathUploadImage, "file", filename, data, nil, tok)
 	if err != nil {
 		return "", err
 	}
@@ -48,7 +39,7 @@ func (c *Channel) uploadGIF(ctx context.Context, data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	raw, err := c.client.apiPostMultipart(ctx, uploadGIFPath, "file", "image.gif", data, nil, tok)
+	raw, err := c.client.apiPostMultipart(ctx, pathUploadGIF, "file", "image.gif", data, nil, tok)
 	if err != nil {
 		return "", err
 	}
@@ -65,7 +56,7 @@ func (c *Channel) uploadFile(ctx context.Context, data []byte, filename string) 
 		return "", err
 	}
 	safe := sanitizeFilename(filename)
-	raw, err := c.client.apiPostMultipart(ctx, uploadFilePath, "file", safe,
+	raw, err := c.client.apiPostMultipart(ctx, pathUploadFile, "file", safe,
 		data, map[string]string{"filename": safe}, tok)
 	if err != nil {
 		return "", err

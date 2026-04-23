@@ -42,9 +42,6 @@ func isMIMEDenied(mime string, deny config.FlexibleStringSlice) bool {
 	return false
 }
 
-// sendMessagePath is the OA customer-service message endpoint.
-const sendMessagePath = "/v3.0/oa/message/cs"
-
 // SendText delivers a plain text message to userID. Returns the upstream
 // message_id on success.
 func (c *Channel) SendText(ctx context.Context, userID, text string) (string, error) {
@@ -52,7 +49,7 @@ func (c *Channel) SendText(ctx context.Context, userID, text string) (string, er
 		"recipient": map[string]any{"user_id": userID},
 		"message":   map[string]any{"text": text},
 	}
-	mid, err := c.post(ctx, sendMessagePath, body)
+	mid, err := c.post(ctx, pathSendMessage, body)
 	if err == nil {
 		slog.Info("zalo_oauth.sent", "type", "text", "message_id", mid, "oa_id", c.creds.OAID)
 	}
@@ -72,7 +69,7 @@ func (c *Channel) SendImage(ctx context.Context, userID string, data []byte, mim
 		return "", err
 	}
 	body := buildMediaAttachmentBody(userID, "image", tok)
-	mid, err := c.post(ctx, sendMessagePath, body)
+	mid, err := c.post(ctx, pathSendMessage, body)
 	if err == nil {
 		slog.Info("zalo_oauth.sent", "type", "image", "message_id", mid, "oa_id", c.creds.OAID)
 	}
@@ -92,7 +89,7 @@ func (c *Channel) SendGIF(ctx context.Context, userID string, data []byte) (stri
 	}
 	// GIFs use the same template/media shape as images with media_type "gif".
 	body := buildMediaAttachmentBody(userID, "gif", tok)
-	mid, err := c.post(ctx, sendMessagePath, body)
+	mid, err := c.post(ctx, pathSendMessage, body)
 	if err == nil {
 		slog.Info("zalo_oauth.sent", "type", "gif", "message_id", mid, "oa_id", c.creds.OAID)
 	}
@@ -145,7 +142,7 @@ func (c *Channel) SendFile(ctx context.Context, userID string, data []byte, file
 			},
 		},
 	}
-	mid, err := c.post(ctx, sendMessagePath, body)
+	mid, err := c.post(ctx, pathSendMessage, body)
 	if err == nil {
 		slog.Info("zalo_oauth.sent", "type", "file", "message_id", mid, "oa_id", c.creds.OAID)
 	}

@@ -50,7 +50,7 @@ func (c *Channel) listRecentChat(ctx context.Context, offset, count int) ([]mess
 		return nil, fmt.Errorf("zalo_oauth: marshal listrecentchat params: %w", err)
 	}
 	q := url.Values{"data": {string(data)}}
-	raw, err := c.client.apiGet(ctx, "/v2.0/oa/listrecentchat", q, tok)
+	raw, err := c.client.apiGet(ctx, pathListRecentChat, q, tok)
 	if err != nil {
 		return nil, err
 	}

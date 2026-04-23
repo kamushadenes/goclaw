@@ -14,16 +14,9 @@ import (
 	"time"
 )
 
-// Endpoint defaults — overridden in tests via Client.{apiBase,oauthBase}.
-// API paths include their own version prefix (/v3.0/...) so apiBase is
-// version-free and per-call paths stay self-documenting.
-const (
-	defaultOAuthBase = "https://oauth.zaloapp.com/v4"
-	defaultAPIBase   = "https://openapi.zalo.me" // v2.0 is discontinued (per ChickenAI SDK); paths use /v3.0
-)
-
 // uploadTimeout is generous because multipart uploads of a few MB over a
 // mobile carrier can take longer than the default 15s API timeout.
+// Host bases + path constants live in endpoints.go.
 const uploadTimeout = 60 * time.Second
 
 // Client wraps Zalo's OAuth + OpenAPI hosts.

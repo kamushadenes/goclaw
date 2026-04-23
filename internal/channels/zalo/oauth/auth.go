@@ -104,7 +104,7 @@ func (c *Client) RefreshToken(ctx context.Context, appID, secretKey, refresh str
 
 func (c *Client) tokenCall(ctx context.Context, secretKey string, form url.Values) (*Tokens, error) {
 	headers := map[string]string{"secret_key": secretKey}
-	raw, err := c.postForm(ctx, c.oauthBase+"/oa/access_token", headers, form)
+	raw, err := c.postForm(ctx, c.oauthBase+pathOAuthAccessToken, headers, form)
 	if err != nil {
 		return nil, err
 	}
