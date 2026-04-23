@@ -17,7 +17,7 @@ import (
 	slackchannel "github.com/nextlevelbuilder/goclaw/internal/channels/slack"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/telegram"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/whatsapp"
-	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo"
+	zalobot "github.com/nextlevelbuilder/goclaw/internal/channels/zalo/bot"
 	zalopersonal "github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal/zalomethods"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
@@ -87,7 +87,7 @@ func registerConfigChannels(cfg *config.Config, channelMgr *channels.Manager, ms
 	if cfg.Channels.Zalo.Enabled {
 		if cfg.Channels.Zalo.Token == "" {
 			recordMissingConfig(channels.TypeZaloBot, "Set channels.zalo.token in config.")
-		} else if z, err := zalo.New(cfg.Channels.Zalo, msgBus, pgStores.Pairing); err != nil {
+		} else if z, err := zalobot.New(cfg.Channels.Zalo, msgBus, pgStores.Pairing); err != nil {
 			channelMgr.RecordFailure(channels.TypeZaloBot, "", err)
 			slog.Error("failed to initialize zalo channel", "error", err)
 		} else {
