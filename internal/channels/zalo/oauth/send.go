@@ -45,11 +45,7 @@ func isMIMEDenied(mime string, deny config.FlexibleStringSlice) bool {
 // SendText delivers a plain text message to userID. Returns the upstream
 // message_id on success.
 func (c *Channel) SendText(ctx context.Context, userID, text string) (string, error) {
-	body := map[string]any{
-		"recipient": map[string]any{"user_id": userID},
-		"message":   map[string]any{"text": text},
-	}
-	mid, err := c.post(ctx, pathSendMessage, body)
+	mid, err := c.post(ctx, pathSendMessage, buildTextBody(userID, text))
 	if err == nil {
 		slog.Info("zalo_oauth.sent", "type", "text", "message_id", mid, "oa_id", c.creds.OAID)
 	}
@@ -96,10 +92,24 @@ func (c *Channel) SendGIF(ctx context.Context, userID string, data []byte) (stri
 	return mid, err
 }
 
-// buildMediaAttachmentBody constructs the template/media payload shape
-// Zalo expects for image + gif attachments sent via /v3.0/oa/message/cs.
-// Verified against nh4ttruong/zalo-oa-api-wrapper + the -201 "Params is
-// invalid" error that simpler shapes trigger.
+// The four Send* payload builders live together so drift between them is
+// obvious on read. Each emits the exact JSON shape Zalo's send endpoint
+// requires — images + gifs use template/media (simpler shapes trigger
+// -201 Params invalid); files use the plain type=file shape; text carries
+// no attachment wrapper at all.
+
+// buildTextBody returns the JSON shape for /v3.0/oa/message/cs text-only sends.
+func buildTextBody(userID, text string) map[string]any {
+	return map[string]any{
+		"recipient": map[string]any{"user_id": userID},
+		"message":   map[string]any{"text": text},
+	}
+}
+
+// buildMediaAttachmentBody returns the template/media payload shape for
+// image + gif attachments. mediaType is either "image" or "gif".
+// Verified against nh4ttruong/zalo-oa-api-wrapper + the -201 error that
+// simpler shapes trigger.
 func buildMediaAttachmentBody(userID, mediaType, attachmentID string) map[string]any {
 	return map[string]any{
 		"recipient": map[string]any{"user_id": userID},
@@ -113,6 +123,22 @@ func buildMediaAttachmentBody(userID, mediaType, attachmentID string) map[string
 						"attachment_id": attachmentID,
 					}},
 				},
+			},
+		},
+	}
+}
+
+// buildFileAttachmentBody returns the plain type=file payload shape for
+// file attachments. File sends do NOT use the template/media wrapper —
+// Zalo's send endpoint routes on attachment.type to decide how to
+// present the attachment downstream.
+func buildFileAttachmentBody(userID, attachmentID string) map[string]any {
+	return map[string]any{
+		"recipient": map[string]any{"user_id": userID},
+		"message": map[string]any{
+			"attachment": map[string]any{
+				"type":    "file",
+				"payload": map[string]any{"attachment_id": attachmentID},
 			},
 		},
 	}
@@ -133,16 +159,7 @@ func (c *Channel) SendFile(ctx context.Context, userID string, data []byte, file
 	if err != nil {
 		return "", err
 	}
-	body := map[string]any{
-		"recipient": map[string]any{"user_id": userID},
-		"message": map[string]any{
-			"attachment": map[string]any{
-				"type":    "file",
-				"payload": map[string]any{"attachment_id": tok},
-			},
-		},
-	}
-	mid, err := c.post(ctx, pathSendMessage, body)
+	mid, err := c.post(ctx, pathSendMessage, buildFileAttachmentBody(userID, tok))
 	if err == nil {
 		slog.Info("zalo_oauth.sent", "type", "file", "message_id", mid, "oa_id", c.creds.OAID)
 	}
