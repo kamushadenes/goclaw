@@ -1,6 +1,6 @@
-// Package zalooauth implements the phone-number-tied Zalo Official Account
+// Package oa implements the phone-number-tied Zalo Official Account
 // channel using OAuth v4 (oauth.zaloapp.com + openapi.zalo.me). Distinct
-// from internal/channels/zalo (Bot OA, static token) and zalo/personal
+// from internal/channels/zalo/bot (static-token Bot) and zalo/personal
 // (QR personal). Different auth, different host, different message shapes.
 package oa
 
