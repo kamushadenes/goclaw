@@ -301,18 +301,11 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 		return t.executeCredentialed(ctx, cred, binary, cmdArgs, cwd, sandboxKey, command)
 	}
 
-	// Chain detection: if the first binary was not credentialed but the command
-	// contains shell operators AND a credentialed binary deeper in the chain,
-	// return an actionable error instead of silently running without credentials.
-	if found := t.detectCredentialedBinaryInChain(ctx, normalizedCommand); found != "" {
-		return &Result{
-			ForLLM: fmt.Sprintf("[CREDENTIALED CLI] Command contains credentialed binary %q but uses shell operators.\n"+
-				"Shell operators (;  &&  ||  |) prevent credential injection.\n"+
-				"Call the CLI directly as the ONLY command: exec(\"%s ...\")\n"+
-				"Do NOT combine with other commands, pipes, or redirects.", found, found),
-			ForUser: fmt.Sprintf("Command contains %q with shell operators \u2014 call it directly.", found),
-			IsError: true,
-		}
+	// Chain detection: credentialed binary found deeper in a shell operator chain.
+	// If allow_chain_exec is enabled for any matched binary, inject credentials
+	// into the full command. Otherwise return an actionable error.
+	if chainResult := t.handleCredentialedChain(ctx, normalizedCommand, command, args); chainResult != nil {
+		return chainResult
 	}
 
 	// Secure CLI gate: registered-but-not-granted binaries MUST NOT fall through
