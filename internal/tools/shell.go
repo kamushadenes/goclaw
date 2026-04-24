@@ -301,6 +301,20 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 		return t.executeCredentialed(ctx, cred, binary, cmdArgs, cwd, sandboxKey, command)
 	}
 
+	// Chain detection: if the first binary was not credentialed but the command
+	// contains shell operators AND a credentialed binary deeper in the chain,
+	// return an actionable error instead of silently running without credentials.
+	if found := t.detectCredentialedBinaryInChain(ctx, normalizedCommand); found != "" {
+		return &Result{
+			ForLLM: fmt.Sprintf("[CREDENTIALED CLI] Command contains credentialed binary %q but uses shell operators.\n"+
+				"Shell operators (;  &&  ||  |) prevent credential injection.\n"+
+				"Call the CLI directly as the ONLY command: exec(\"%s ...\")\n"+
+				"Do NOT combine with other commands, pipes, or redirects.", found, found),
+			ForUser: fmt.Sprintf("Command contains %q with shell operators \u2014 call it directly.", found),
+			IsError: true,
+		}
+	}
+
 	// Secure CLI gate: registered-but-not-granted binaries MUST NOT fall through
 	// to host exec with parent env. Works on the already-normalized command
 	// (Red Team F6) and unwraps shell wrappers up to depth 3 (Red Team F1).

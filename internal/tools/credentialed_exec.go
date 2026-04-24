@@ -665,3 +665,60 @@ func credentialedExecFailError(binary string, args []string, exitCode int, outpu
 		IsError: true,
 	}
 }
+
+// detectCredentialedBinaryInChain scans a command that contains shell operators
+// for any token that matches a registered credentialed binary. Returns the
+// binary name if found, empty string otherwise. This catches cases where the
+// LLM wraps a credentialed CLI in a shell chain (e.g. "which gh && gh pr list")
+// — the first binary ("which") is not credentialed so lookupCredentialedBinary
+// misses it, but "gh" deeper in the chain IS credentialed and would run without
+// token injection if allowed to fall through to regular exec.
+//
+// Uses extractUnquotedSegments (quote-aware) so that operators inside quoted
+// arguments (e.g. --jq '.[0] | .name') are not mistaken for command chains.
+func (t *ExecTool) detectCredentialedBinaryInChain(ctx context.Context, command string) string {
+	if t.secureCLIStore == nil {
+		return ""
+	}
+	// Only check commands that have shell operators outside of quotes.
+	// detectUnquotedShellOperators already uses extractUnquotedSegments
+	// internally, so quoted pipes/semicolons are ignored.
+	if ops := detectUnquotedShellOperators(command); len(ops) == 0 {
+		return ""
+	}
+	// Extract only the unquoted portions of the command. This collapses
+	// quoted strings so that operators inside quotes disappear entirely,
+	// preventing false splits on e.g. '.[0] | .name'.
+	unquoted := extractUnquotedSegments(command)
+	// Split the unquoted text on shell operator characters. This is safe
+	// because extractUnquotedSegments already stripped all quoted content.
+	segments := shellOperatorPattern.Split(unquoted, -1)
+	for _, seg := range segments {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			continue
+		}
+		// Use go-shellwords to parse the segment's first token, handling
+		// edge cases like leading whitespace or escaped characters.
+		parser := shellwords.NewParser()
+		parser.ParseBacktick = false
+		parser.ParseEnv = false
+		words, err := parser.Parse(seg)
+		if err != nil || len(words) == 0 {
+			// Fallback to simple field split if shellwords fails
+			fields := strings.Fields(seg)
+			if len(fields) == 0 {
+				continue
+			}
+			words = fields[:1]
+		}
+		binary := normalizeBinaryName(words[0])
+		gctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		registered, rerr := t.secureCLIStore.IsRegisteredBinary(gctx, binary)
+		cancel()
+		if rerr == nil && registered {
+			return binary
+		}
+	}
+	return ""
+}
