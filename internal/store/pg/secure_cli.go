@@ -70,7 +70,7 @@ func (s *PGSecureCLIStore) Create(ctx context.Context, b *store.SecureCLIBinary)
 	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO secure_cli_binaries (id, binary_name, binary_path, description, encrypted_env,
 		 deny_args, deny_verbose, timeout_seconds, tips, is_global, allow_chain_exec, enabled, created_by, created_at, updated_at, tenant_id)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 		b.ID, b.BinaryName, nilStr(derefStr(b.BinaryPath)), b.Description,
 		envBytes,
 		jsonOrEmptyArray(b.DenyArgs), jsonOrEmptyArray(b.DenyVerbose),
