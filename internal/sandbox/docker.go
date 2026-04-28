@@ -50,11 +50,13 @@ func newDockerSandbox(ctx context.Context, name string, cfg Config, workspace st
 	}
 	// Default tmpfs flags. `noexec` blocks running binaries extracted to
 	// /tmp at runtime (e.g. staticx-wrapped CLIs). Operators who need
-	// that capability can opt out via Config.AllowTmpExec, in which
-	// case the `noexec` flag is dropped while `nosuid` + `nodev` stay.
+	// that capability can opt out via Config.AllowTmpExec; we then mount
+	// with an explicit `exec` flag because Docker silently re-adds
+	// `noexec` to tmpfs mounts whose flag list doesn't override it.
+	// `nosuid` + `nodev` stay either way.
 	baseTmpfsOpts := "noexec,nosuid,nodev"
 	if cfg.AllowTmpExec {
-		baseTmpfsOpts = "nosuid,nodev"
+		baseTmpfsOpts = "exec,nosuid,nodev"
 	}
 	for _, t := range cfg.Tmpfs {
 		if !strings.Contains(t, ":") {
@@ -66,8 +68,13 @@ func newDockerSandbox(ctx context.Context, name string, cfg Config, workspace st
 			t = fmt.Sprintf("%s:%s", t, opts)
 		} else if cfg.AllowTmpExec {
 			// User-specified options + opt-out: strip any `noexec`
-			// the user passed and enforce the security floor.
+			// the user passed and inject explicit `exec` so Docker
+			// doesn't re-add the default. Also enforce the security
+			// floor (nosuid, nodev).
 			t = stripTmpfsOpt(t, "noexec")
+			if !strings.Contains(t, "exec") {
+				t += ",exec"
+			}
 			if !strings.Contains(t, "nosuid") {
 				t += ",nosuid"
 			}
