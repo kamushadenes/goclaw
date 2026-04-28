@@ -48,14 +48,32 @@ func newDockerSandbox(ctx context.Context, name string, cfg Config, workspace st
 	if cfg.ReadOnlyRoot {
 		args = append(args, "--read-only")
 	}
+	// Default tmpfs flags. `noexec` blocks running binaries extracted to
+	// /tmp at runtime (e.g. staticx-wrapped CLIs). Operators who need
+	// that capability can opt out via Config.AllowTmpExec, in which
+	// case the `noexec` flag is dropped while `nosuid` + `nodev` stay.
+	baseTmpfsOpts := "noexec,nosuid,nodev"
+	if cfg.AllowTmpExec {
+		baseTmpfsOpts = "nosuid,nodev"
+	}
 	for _, t := range cfg.Tmpfs {
 		if !strings.Contains(t, ":") {
 			// Always add security flags; optionally add size limit
-			opts := "noexec,nosuid,nodev"
+			opts := baseTmpfsOpts
 			if cfg.TmpfsSizeMB > 0 {
 				opts = fmt.Sprintf("size=%dm,%s", cfg.TmpfsSizeMB, opts)
 			}
 			t = fmt.Sprintf("%s:%s", t, opts)
+		} else if cfg.AllowTmpExec {
+			// User-specified options + opt-out: strip any `noexec`
+			// the user passed and enforce the security floor.
+			t = stripTmpfsOpt(t, "noexec")
+			if !strings.Contains(t, "nosuid") {
+				t += ",nosuid"
+			}
+			if !strings.Contains(t, "nodev") {
+				t += ",nodev"
+			}
 		} else if !strings.Contains(t, "noexec") {
 			// User-specified options but missing noexec — append security flags
 			t += ",noexec,nosuid,nodev"
@@ -471,4 +489,29 @@ func (lb *limitedBuffer) Write(p []byte) (int, error) {
 
 func (lb *limitedBuffer) String() string {
 	return lb.buf.String()
+}
+
+// stripTmpfsOpt removes a single comma-separated option (e.g. "noexec")
+// from a tmpfs spec like "/tmp:size=64m,noexec,nosuid,nodev". Leaves
+// the path prefix untouched. Used by Config.AllowTmpExec to drop
+// noexec from operator-specified tmpfs entries without disturbing
+// other flags.
+func stripTmpfsOpt(spec, opt string) string {
+	idx := strings.Index(spec, ":")
+	if idx < 0 {
+		return spec
+	}
+	path, opts := spec[:idx], spec[idx+1:]
+	parts := strings.Split(opts, ",")
+	kept := parts[:0]
+	for _, p := range parts {
+		if p == opt {
+			continue
+		}
+		kept = append(kept, p)
+	}
+	if len(kept) == 0 {
+		return path
+	}
+	return path + ":" + strings.Join(kept, ",")
 }
