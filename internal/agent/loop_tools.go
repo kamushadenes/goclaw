@@ -133,7 +133,7 @@ func (l *Loop) processToolResult(
 	}
 
 	// Check for same tool returning identical results with different args.
-	if rh := hashResult(result.ForLLM); rh != "" {
+	if rh := hashResultForSameResult(registryName, result.ForLLM, result.IsError); rh != "" {
 		if level, msg := rs.loopDetector.detectSameResult(registryName, rh); level != "" {
 			if level == "critical" {
 				slog.Warn("tool loop critical: same result",

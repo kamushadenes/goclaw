@@ -281,6 +281,24 @@ func hashResult(content string) string {
 	return fmt.Sprintf("%x", h[:16])
 }
 
+func hashResultForSameResult(toolName, content string, isError bool) string {
+	if !isError && isLowSignalSameResult(toolName, content) {
+		return ""
+	}
+	return hashResult(content)
+}
+
+func isLowSignalSameResult(toolName, content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return true
+	}
+	if (toolName == "exec" || toolName == "bash") && trimmed == "(command completed with no output)" {
+		return true
+	}
+	return false
+}
+
 // stableJSON serializes a value with sorted keys for deterministic hashing.
 func stableJSON(v any) string {
 	switch val := v.(type) {

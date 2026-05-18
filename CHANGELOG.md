@@ -42,6 +42,9 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   shell command, checks every command segment, blocks ungranted registered
   CLIs, enforces deny/verbose policies before execution, and injects all matched
   credential env vars into the subprocess.
+- **Loop detection ignores successful no-output exec calls.** Distinct commands
+  such as `git config`, `git add`, and other successful no-output shell steps no
+  longer trip the same-result runaway guard.
 - **Skill activation returns instructions.** `use_skill` now returns the
   selected `SKILL.md` content plus bundled markdown references, so agents can
   follow skills even when `read_file` is not available in their tool set.

@@ -656,6 +656,31 @@ func TestSameResult_DifferentResults(t *testing.T) {
 	}
 }
 
+func TestSameResult_IgnoresSuccessfulExecNoOutput(t *testing.T) {
+	var s toolLoopState
+	sameResult := "(command completed with no output)"
+	for i := range sameResultCritical + 2 {
+		args := map[string]any{"command": fmt.Sprintf("git add file%d", i)}
+		h := s.record("exec", args)
+		s.recordResult(h, sameResult)
+	}
+	rh := hashResultForSameResult("exec", sameResult, false)
+	if rh != "" {
+		t.Fatalf("expected no same-result hash for successful no-output exec, got %q", rh)
+	}
+	level, _ := s.detectSameResult("exec", rh)
+	if level != "" {
+		t.Fatalf("expected no same-result detection for successful no-output exec, got %q", level)
+	}
+}
+
+func TestSameResult_StillTracksExecErrors(t *testing.T) {
+	rh := hashResultForSameResult("exec", "(command completed with no output)", true)
+	if rh == "" {
+		t.Fatal("expected error results to remain eligible for same-result detection")
+	}
+}
+
 func TestHashToolCall(t *testing.T) {
 	// Same input → same hash
 	h1 := hashToolCall("list_files", map[string]any{"path": "."})
