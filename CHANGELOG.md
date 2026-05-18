@@ -37,6 +37,9 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Improvements
 
+- **Sandboxed skill reads.** `read_file` and `list_files` can now follow
+  `skill_search` / `use_skill` locations under the read-only
+  `/app/data/skills-store` mount instead of falling back to the workspace root.
 - **Context pruning cleanup.** Removed redundant Pass 0 (per-result 30% guard),
   deduplicated double prune call per iteration, added SanitizeHistory to
   PruneStage for broken tool_use/tool_result pair cleanup.

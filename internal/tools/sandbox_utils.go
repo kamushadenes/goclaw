@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+const sandboxSkillsStorePath = "/app/data/skills-store"
+
 // SandboxCwd maps the current effective workspace (from context) to its
 // corresponding path inside the sandbox container. The sandbox mounts the
 // global workspace root at containerBase (usually "/workspace"). This function
@@ -38,8 +40,20 @@ func SandboxCwd(ctx context.Context, globalWorkspace, containerBase string) (str
 // with containerCwd. Absolute paths are returned as-is (the sandbox
 // filesystem already restricts access to the mounted volume).
 func ResolveSandboxPath(path, containerCwd string) string {
+	if IsSandboxSkillsStorePath(path) {
+		// FsBridge resolves relative paths from /workspace. The skills store is
+		// mounted read-only at /app/data/skills-store in the sandbox.
+		return filepath.Join("..", strings.TrimPrefix(filepath.Clean(path), string(filepath.Separator)))
+	}
 	if filepath.IsAbs(path) {
 		return path
 	}
 	return filepath.Join(containerCwd, path)
+}
+
+// IsSandboxSkillsStorePath reports whether path is inside the read-only
+// skills-store mount available to sandbox containers.
+func IsSandboxSkillsStorePath(path string) bool {
+	cleaned := filepath.Clean(path)
+	return cleaned == sandboxSkillsStorePath || strings.HasPrefix(cleaned, sandboxSkillsStorePath+"/")
 }

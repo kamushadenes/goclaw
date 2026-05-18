@@ -115,6 +115,12 @@ func TestResolveSandboxPath(t *testing.T) {
 			want:         "/workspace/agent-a/file.txt",
 		},
 		{
+			name:         "skills store path translated for bridge",
+			path:         "/app/data/skills-store/juquinha-query-calendar/1/SKILL.md",
+			containerCwd: "/workspace/agent-a",
+			want:         "../app/data/skills-store/juquinha-query-calendar/1/SKILL.md",
+		},
+		{
 			name:         "dot path",
 			path:         ".",
 			containerCwd: "/workspace/agent-a",
@@ -127,6 +133,48 @@ func TestResolveSandboxPath(t *testing.T) {
 			got := ResolveSandboxPath(tt.path, tt.containerCwd)
 			if got != tt.want {
 				t.Errorf("ResolveSandboxPath(%q, %q) = %q, want %q", tt.path, tt.containerCwd, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsSandboxSkillsStorePath(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		want bool
+	}{
+		{
+			name: "skills store root",
+			path: "/app/data/skills-store",
+			want: true,
+		},
+		{
+			name: "skill file",
+			path: "/app/data/skills-store/juquinha-query-calendar/1/SKILL.md",
+			want: true,
+		},
+		{
+			name: "traversal escapes skill store",
+			path: "/app/data/skills-store/../config.json",
+			want: false,
+		},
+		{
+			name: "similar prefix is not allowed",
+			path: "/app/data/skills-store-bak/skill/SKILL.md",
+			want: false,
+		},
+		{
+			name: "other app data is blocked",
+			path: "/app/data/config.json",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsSandboxSkillsStorePath(tt.path); got != tt.want {
+				t.Fatalf("IsSandboxSkillsStorePath(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
 	}
