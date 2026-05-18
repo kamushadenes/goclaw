@@ -37,6 +37,11 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Improvements
 
+- **Credentialed shell-chain execution.** Credentialed CLIs can now run inside
+  audited shell chains when `allow_chain_exec` is enabled. GoClaw parses the
+  shell command, checks every command segment, blocks ungranted registered
+  CLIs, enforces deny/verbose policies before execution, and injects all matched
+  credential env vars into the subprocess.
 - **Skill activation returns instructions.** `use_skill` now returns the
   selected `SKILL.md` content plus bundled markdown references, so agents can
   follow skills even when `read_file` is not available in their tool set.

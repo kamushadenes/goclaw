@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -183,6 +185,128 @@ func TestExec_GrantedBinary_UsesCredentialedPath(t *testing.T) {
 	}
 }
 
+func TestExec_CredentialedChainInjectsAllMatchedEnvVars(t *testing.T) {
+	workspace := t.TempDir()
+	binDir := t.TempDir()
+	writeExecutable(t, filepath.Join(binDir, "gh"), `#!/usr/bin/env sh
+printf 'GH_SET=%s\n' "${GH_TOKEN:+yes}"
+`)
+	writeExecutable(t, filepath.Join(binDir, "git"), `#!/usr/bin/env sh
+printf 'GIT_SET=%s\n' "${GIT_TOKEN:+yes}"
+`)
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	tool, stub, ctx := newGateTestTool(t)
+	tool.workspace = workspace
+	stub.byName["gh"] = &store.SecureCLIBinary{
+		BinaryName:     "gh",
+		EncryptedEnv:   []byte(`{"GH_TOKEN":"gh-secret"}`),
+		TimeoutSeconds: 10,
+		DenyArgs:       json.RawMessage("[]"),
+		DenyVerbose:    json.RawMessage("[]"),
+		AllowChainExec: true,
+	}
+	stub.byName["git"] = &store.SecureCLIBinary{
+		BinaryName:     "git",
+		EncryptedEnv:   []byte(`{"GIT_TOKEN":"git-secret"}`),
+		TimeoutSeconds: 10,
+		DenyArgs:       json.RawMessage("[]"),
+		DenyVerbose:    json.RawMessage("[]"),
+		AllowChainExec: true,
+	}
+
+	result := tool.Execute(ctx, map[string]any{
+		"command":     "gh ok && git ok > git.out",
+		"working_dir": workspace,
+	})
+	if result.IsError {
+		t.Fatalf("expected credentialed chain success, got: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "GH_SET=yes") {
+		t.Fatalf("expected gh env to be injected, got: %s", result.ForLLM)
+	}
+	data, err := os.ReadFile(filepath.Join(workspace, "git.out"))
+	if err != nil {
+		t.Fatalf("read redirected git output: %v", err)
+	}
+	if !strings.Contains(string(data), "GIT_SET=yes") {
+		t.Fatalf("expected git env to be injected into redirected command, got: %s", string(data))
+	}
+	if strings.Contains(result.ForLLM, "gh-secret") || strings.Contains(string(data), "git-secret") {
+		t.Fatalf("credential value leaked: result=%q file=%q", result.ForLLM, string(data))
+	}
+}
+
+func TestExec_CredentialedChainBlocksRegisteredUngrantInAnySegment(t *testing.T) {
+	tool, stub, ctx := newGateTestTool(t)
+	stub.byName["gh"] = &store.SecureCLIBinary{
+		BinaryName:     "gh",
+		EncryptedEnv:   []byte(`{"GH_TOKEN":"gh-secret"}`),
+		TimeoutSeconds: 10,
+		DenyArgs:       json.RawMessage("[]"),
+		DenyVerbose:    json.RawMessage("[]"),
+		AllowChainExec: true,
+	}
+	stub.registered["git"] = true
+
+	result := tool.Execute(ctx, map[string]any{"command": "gh ok && git status"})
+	if !result.IsError {
+		t.Fatalf("expected registered-but-ungranted git to block chain, got success: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "requires a secure CLI grant") || !strings.Contains(result.ForLLM, "git") {
+		t.Fatalf("expected grant-required git error, got: %s", result.ForLLM)
+	}
+}
+
+func TestExec_CredentialedChainRequiresAllowChainForEveryMatchedCLI(t *testing.T) {
+	tool, stub, ctx := newGateTestTool(t)
+	stub.byName["gh"] = &store.SecureCLIBinary{
+		BinaryName:     "gh",
+		EncryptedEnv:   []byte(`{"GH_TOKEN":"gh-secret"}`),
+		TimeoutSeconds: 10,
+		DenyArgs:       json.RawMessage("[]"),
+		DenyVerbose:    json.RawMessage("[]"),
+		AllowChainExec: true,
+	}
+	stub.byName["git"] = &store.SecureCLIBinary{
+		BinaryName:     "git",
+		EncryptedEnv:   []byte(`{"GIT_TOKEN":"git-secret"}`),
+		TimeoutSeconds: 10,
+		DenyArgs:       json.RawMessage("[]"),
+		DenyVerbose:    json.RawMessage("[]"),
+		AllowChainExec: false,
+	}
+
+	result := tool.Execute(ctx, map[string]any{"command": "gh ok && git status"})
+	if !result.IsError {
+		t.Fatalf("expected chain to require allow_chain_exec on git, got success: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "allow_chain_exec") || !strings.Contains(result.ForLLM, "git") {
+		t.Fatalf("expected allow_chain_exec error for git, got: %s", result.ForLLM)
+	}
+}
+
+func TestExec_CredentialedChainEnforcesDenyArgsBeforeShell(t *testing.T) {
+	tool, stub, ctx := newGateTestTool(t)
+	deny, _ := json.Marshal([]string{`auth\s+login`})
+	stub.byName["gh"] = &store.SecureCLIBinary{
+		BinaryName:     "gh",
+		EncryptedEnv:   []byte(`{"GH_TOKEN":"gh-secret"}`),
+		TimeoutSeconds: 10,
+		DenyArgs:       deny,
+		DenyVerbose:    json.RawMessage("[]"),
+		AllowChainExec: true,
+	}
+
+	result := tool.Execute(ctx, map[string]any{"command": "gh auth login && echo done"})
+	if !result.IsError {
+		t.Fatalf("expected deny_args to block credentialed chain, got success: %s", result.ForLLM)
+	}
+	if !strings.Contains(result.ForLLM, "Command blocked by security policy") {
+		t.Fatalf("expected deny policy error, got: %s", result.ForLLM)
+	}
+}
+
 // --- Phase 3 gate-enforcement tests ---
 
 // helper: build a gate-wired ExecTool with a fresh stub + ctx.
@@ -193,6 +317,13 @@ func newGateTestTool(t *testing.T) (*ExecTool, *stubSecureCLIStore, context.Cont
 	tool.SetSecureCLIStore(stub)
 	ctx := store.WithTenantID(store.WithAgentID(context.Background(), uuid.New()), uuid.New())
 	return tool, stub, ctx
+}
+
+func writeExecutable(t *testing.T, path string, body string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatalf("write executable %s: %v", path, err)
+	}
 }
 
 // TestExec_BlocksRegisteredBinaryWhenNoGrant: registered without grant → deny.

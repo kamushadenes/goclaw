@@ -277,6 +277,13 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 		return SilentResult(hint)
 	}
 
+	// Shell-chain detection runs before direct credential lookup so commands like
+	// `gh api ... && git status > out` can be audited as one shell script and
+	// receive every matched CLI credential env var.
+	if chainResult := t.handleCredentialedChain(ctx, normalizedCommand, command, args); chainResult != nil {
+		return chainResult
+	}
+
 	// Credentialed exec: if command matches a configured binary, use Direct Exec Mode.
 	// This bypasses approval (admin trust) and shell (security).
 	if cred, binary, cmdArgs := t.lookupCredentialedBinary(ctx, command); cred != nil {
@@ -295,13 +302,6 @@ func (t *ExecTool) Execute(ctx context.Context, args map[string]any) *Result {
 		}
 		sandboxKey := ToolSandboxKeyFromCtx(ctx)
 		return t.executeCredentialed(ctx, cred, binary, cmdArgs, cwd, sandboxKey, command)
-	}
-
-	// Chain detection: credentialed binary found deeper in a shell operator chain.
-	// If allow_chain_exec is enabled for any matched binary, inject credentials
-	// into the full command. Otherwise return an actionable error.
-	if chainResult := t.handleCredentialedChain(ctx, normalizedCommand, command, args); chainResult != nil {
-		return chainResult
 	}
 
 	// Secure CLI gate: registered-but-not-granted binaries MUST NOT fall through

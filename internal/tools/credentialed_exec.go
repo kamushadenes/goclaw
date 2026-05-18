@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/uuid"
 	shellwords "github.com/mattn/go-shellwords"
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/nextlevelbuilder/goclaw/internal/sandbox"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -132,6 +133,25 @@ func detectWrapper(cmd string) (wrapper string, innerCmd string, ok bool) {
 type gateCandidate struct {
 	binary  string // normalized (lowercase, file base)
 	wrapper string // "" for outermost direct invocation; else wrapper name
+}
+
+type shellCall struct {
+	binary      string
+	args        []string
+	dynamicArgs bool
+	display     string
+}
+
+type shellCallScan struct {
+	calls           []shellCall
+	dynamicCommands []string
+	tooDeep         bool
+}
+
+type chainMatch struct {
+	binary string
+	args   []string
+	cred   *store.SecureCLIBinary
 }
 
 // collectGateCandidates returns the ordered list of binaries extracted from
@@ -334,6 +354,22 @@ func matchesBinaryVerbose(args []string, denyPatternsJSON json.RawMessage) strin
 	return ""
 }
 
+func credentialedEnvMap(binary string, cred *store.SecureCLIBinary) (map[string]string, error) {
+	envMap := make(map[string]string)
+	if len(cred.EncryptedEnv) > 0 {
+		if err := json.Unmarshal(cred.EncryptedEnv, &envMap); err != nil {
+			return nil, fmt.Errorf("invalid env JSON for %q: %w", binary, err)
+		}
+	}
+	if len(cred.UserEnv) > 0 {
+		var userEnvMap map[string]string
+		if err := json.Unmarshal(cred.UserEnv, &userEnvMap); err == nil {
+			maps.Copy(envMap, userEnvMap)
+		}
+	}
+	return envMap, nil
+}
+
 // executeCredentialed runs a CLI command in Direct Exec Mode (no shell).
 // Credentials are injected as env vars into the child process only.
 // rawCommand is the original command string before shell-word parsing (preserves quoting).
@@ -373,20 +409,10 @@ func (t *ExecTool) executeCredentialed(ctx context.Context, cred *store.SecureCL
 		return credentialedDenyError(binary, args, p)
 	}
 
-	// Step 4: Decrypt env vars from store (already decrypted by store layer)
-	envMap := make(map[string]string)
-	if len(cred.EncryptedEnv) > 0 {
-		if err := json.Unmarshal(cred.EncryptedEnv, &envMap); err != nil {
-			return ErrorResult(fmt.Sprintf("credentialed exec: invalid env JSON for %q: %v", binary, err))
-		}
-	}
-
-	// Step 4b: Merge per-user env overrides (user takes priority over base)
-	if len(cred.UserEnv) > 0 {
-		var userEnvMap map[string]string
-		if err := json.Unmarshal(cred.UserEnv, &userEnvMap); err == nil {
-			maps.Copy(envMap, userEnvMap)
-		}
+	// Step 4: Decrypt env vars from store (already decrypted by store layer).
+	envMap, err := credentialedEnvMap(binary, cred)
+	if err != nil {
+		return ErrorResult("credentialed exec: " + err.Error())
 	}
 
 	// Step 5: Register credential values for output scrubbing
@@ -658,8 +684,7 @@ func credentialedExecFailError(binary string, args []string, exitCode int, outpu
 	return &Result{
 		ForLLM: fmt.Sprintf("[CREDENTIALED EXEC] Command failed (exit code %d).\n"+
 			"Binary: %s\nArgs: %s\n"+
-			"Note: This runs in Direct Exec Mode — shell operators are NOT supported.\n"+
-			"If you used shell operators, remove them and try again.\n\n%s",
+			"Note: credentialed CLIs run without a shell unless allow_chain_exec is enabled for every credentialed CLI in a shell chain.\n\n%s",
 			exitCode, binary, strings.Join(args, " "), output),
 		ForUser: fmt.Sprintf("Command failed with exit code %d.", exitCode),
 		IsError: true,
@@ -723,6 +748,195 @@ func (t *ExecTool) detectCredentialedBinaryInChain(ctx context.Context, command 
 	return ""
 }
 
+func needsCredentialedShellMode(command string) bool {
+	if ops := detectUnquotedShellOperators(command); len(ops) > 0 {
+		return true
+	}
+	_, inner, ok := detectWrapper(command)
+	return ok && strings.TrimSpace(inner) != ""
+}
+
+func scanShellCalls(command string, depth int) (shellCallScan, error) {
+	var out shellCallScan
+	if depth > maxWrapperDepth {
+		out.tooDeep = true
+		return out, nil
+	}
+	file, err := syntax.NewParser().Parse(strings.NewReader(command), "")
+	if err != nil {
+		return out, err
+	}
+	syntax.Walk(file, func(n syntax.Node) bool {
+		call, ok := n.(*syntax.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+
+		display := printShellNode(call)
+		binary, staticBinary := staticShellWord(call.Args[0])
+		if !staticBinary || strings.TrimSpace(binary) == "" {
+			out.dynamicCommands = append(out.dynamicCommands, display)
+			return true
+		}
+
+		args := make([]string, 0, len(call.Args)-1)
+		dynamicArgs := false
+		for _, word := range call.Args[1:] {
+			if arg, ok := staticShellWord(word); ok {
+				args = append(args, arg)
+			} else {
+				dynamicArgs = true
+				args = append(args, printShellNode(word))
+			}
+		}
+		out.calls = append(out.calls, shellCall{
+			binary:      normalizeBinaryName(binary),
+			args:        args,
+			dynamicArgs: dynamicArgs,
+			display:     display,
+		})
+
+		if inner, ok := wrapperInnerFromStaticWords(append([]string{binary}, args...)); ok {
+			nested, err := scanShellCalls(inner, depth+1)
+			if err != nil {
+				out.dynamicCommands = append(out.dynamicCommands, fmt.Sprintf("%s (unparseable wrapper command: %v)", display, err))
+				return true
+			}
+			out.calls = append(out.calls, nested.calls...)
+			out.dynamicCommands = append(out.dynamicCommands, nested.dynamicCommands...)
+			if nested.tooDeep {
+				out.tooDeep = true
+			}
+		}
+		return true
+	})
+	return out, nil
+}
+
+func staticShellWord(word *syntax.Word) (string, bool) {
+	var b strings.Builder
+	for _, part := range word.Parts {
+		s, ok := staticShellWordPart(part)
+		if !ok {
+			return "", false
+		}
+		b.WriteString(s)
+	}
+	return b.String(), true
+}
+
+func staticShellWordPart(part syntax.WordPart) (string, bool) {
+	switch p := part.(type) {
+	case *syntax.Lit:
+		return p.Value, true
+	case *syntax.SglQuoted:
+		return p.Value, true
+	case *syntax.DblQuoted:
+		var b strings.Builder
+		for _, nested := range p.Parts {
+			s, ok := staticShellWordPart(nested)
+			if !ok {
+				return "", false
+			}
+			b.WriteString(s)
+		}
+		return b.String(), true
+	default:
+		return "", false
+	}
+}
+
+func printShellNode(node syntax.Node) string {
+	var b strings.Builder
+	if err := syntax.NewPrinter().Print(&b, node); err != nil {
+		return "<unprintable shell node>"
+	}
+	return b.String()
+}
+
+func wrapperInnerFromStaticWords(words []string) (string, bool) {
+	if len(words) == 0 {
+		return "", false
+	}
+	switch normalizeBinaryName(words[0]) {
+	case "sh", "bash", "zsh", "dash":
+		for i := 1; i < len(words); i++ {
+			if words[i] == "-c" && i+1 < len(words) {
+				return words[i+1], strings.TrimSpace(words[i+1]) != ""
+			}
+		}
+	case "env":
+		for i := 1; i < len(words); i++ {
+			w := words[i]
+			if w == "-i" || w == "-" {
+				continue
+			}
+			if w == "-u" {
+				i++
+				continue
+			}
+			if strings.HasPrefix(w, "-u") && len(w) > 2 {
+				continue
+			}
+			if strings.Contains(w, "=") && !strings.HasPrefix(w, "-") {
+				continue
+			}
+			if strings.HasPrefix(w, "-") {
+				return "", false
+			}
+			return quoteShellWords(words[i:]), true
+		}
+	case "nohup":
+		if len(words) > 1 {
+			return quoteShellWords(words[1:]), true
+		}
+	case "stdbuf":
+		for i := 1; i < len(words); i++ {
+			if strings.HasPrefix(words[i], "-") {
+				continue
+			}
+			return quoteShellWords(words[i:]), true
+		}
+	case "timeout":
+		for i := 1; i < len(words); i++ {
+			if strings.HasPrefix(words[i], "-") {
+				if words[i] == "-k" && i+1 < len(words) {
+					i++
+				}
+				continue
+			}
+			if i+1 < len(words) {
+				return quoteShellWords(words[i+1:]), true
+			}
+			return "", false
+		}
+	}
+	return "", false
+}
+
+func quoteShellWords(words []string) string {
+	quoted := make([]string, 0, len(words))
+	for _, word := range words {
+		quoted = append(quoted, quoteShellWord(word))
+	}
+	return strings.Join(quoted, " ")
+}
+
+func quoteShellWord(word string) string {
+	if word == "" {
+		return "''"
+	}
+	if strings.IndexFunc(word, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' ||
+			r >= 'A' && r <= 'Z' ||
+			r >= '0' && r <= '9' ||
+			strings.ContainsRune("_@%+=:,./-", r))
+	}) == -1 {
+		return word
+	}
+	return "'" + strings.ReplaceAll(word, "'", `'\''`) + "'"
+}
+
 // handleCredentialedChain handles commands where a credentialed binary appears
 // inside a shell operator chain (e.g. "which gh && gh pr list"). Two modes:
 //
@@ -738,20 +952,9 @@ func (t *ExecTool) handleCredentialedChain(ctx context.Context, normalizedCmd, r
 	if t.secureCLIStore == nil {
 		return nil
 	}
-	if ops := detectUnquotedShellOperators(normalizedCmd); len(ops) == 0 {
+	if !needsCredentialedShellMode(normalizedCmd) {
 		return nil
 	}
-
-	// Scan all segments for credentialed binaries
-	unquoted := extractUnquotedSegments(normalizedCmd)
-	segments := shellOperatorPattern.Split(unquoted, -1)
-
-	type chainMatch struct {
-		binary string
-		cred   *store.SecureCLIBinary
-	}
-	var matches []chainMatch
-	anyAllowChain := false
 
 	agentID := store.AgentIDFromContext(ctx)
 	var agentIDPtr *uuid.UUID
@@ -760,32 +963,62 @@ func (t *ExecTool) handleCredentialedChain(ctx context.Context, normalizedCmd, r
 	}
 	userID := store.CredentialUserIDFromContext(ctx)
 
-	for _, seg := range segments {
-		seg = strings.TrimSpace(seg)
-		if seg == "" {
-			continue
+	scan, err := scanShellCalls(normalizedCmd, 0)
+	if err != nil {
+		if first := t.detectCredentialedBinaryInChain(ctx, normalizedCmd); first != "" {
+			return ErrorResult(fmt.Sprintf("credentialed chain exec: failed to parse shell command containing %q: %v", first, err))
 		}
-		parser := shellwords.NewParser()
-		parser.ParseBacktick = false
-		parser.ParseEnv = false
-		words, err := parser.Parse(seg)
-		if err != nil || len(words) == 0 {
-			fields := strings.Fields(seg)
-			if len(fields) == 0 {
-				continue
-			}
-			words = fields[:1]
-		}
-		binary := normalizeBinaryName(words[0])
+		return nil
+	}
+	if scan.tooDeep {
+		return ErrorResult("Command nesting too deep (>3 shell wrappers). This looks adversarial; if legitimate, flatten the command.")
+	}
+
+	var matches []chainMatch
+	for _, call := range scan.calls {
 		gctx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		cred, lookupErr := t.secureCLIStore.LookupByBinary(gctx, binary, agentIDPtr, userID)
+		cred, lookupErr := t.secureCLIStore.LookupByBinary(gctx, call.binary, agentIDPtr, userID)
 		cancel()
-		if lookupErr != nil || cred == nil {
+		if lookupErr != nil {
+			slog.Warn("security.credentialed_chain_lookup_error",
+				"binary", call.binary, "error", lookupErr,
+				"agent_id", agentID)
+			return ErrorResult("Secure CLI lookup temporarily unavailable. Retry in a moment.")
+		}
+		if cred != nil {
+			if call.dynamicArgs {
+				return ErrorResult(fmt.Sprintf(
+					"Credentialed chain command %q contains dynamic shell arguments. Use literal arguments so GoClaw can enforce deny policies before injecting credentials.",
+					call.display))
+			}
+			if p := matchesBinaryDeny(call.args, cred.DenyArgs); p != "" {
+				return credentialedDenyError(call.binary, call.args, p)
+			}
+			if p := matchesBinaryVerbose(call.args, cred.DenyVerbose); p != "" {
+				return credentialedDenyError(call.binary, call.args, p)
+			}
+			matches = append(matches, chainMatch{binary: call.binary, args: call.args, cred: cred})
 			continue
 		}
-		matches = append(matches, chainMatch{binary: binary, cred: cred})
-		if cred.AllowChainExec {
-			anyAllowChain = true
+
+		gctx, cancel = context.WithTimeout(ctx, 2*time.Second)
+		registered, regErr := t.secureCLIStore.IsRegisteredBinary(gctx, call.binary)
+		cancel()
+		if regErr != nil {
+			slog.Warn("security.credentialed_chain_gate_error",
+				"binary", call.binary, "error", regErr,
+				"agent_id", agentID)
+			return ErrorResult("Secure CLI gate temporarily unavailable. Retry in a moment.")
+		}
+		if registered {
+			slog.Warn("security.credentialed_chain_denied",
+				"binary", call.binary,
+				"agent_id", agentID,
+				"tenant_id", store.TenantIDFromContext(ctx),
+				"command_prefix", truncateCmd(normalizedCmd, 80))
+			return ErrorResult(fmt.Sprintf(
+				"Binary %q requires a secure CLI grant. Ask admin to grant access to this agent.",
+				call.binary))
 		}
 	}
 
@@ -793,15 +1026,25 @@ func (t *ExecTool) handleCredentialedChain(ctx context.Context, normalizedCmd, r
 		return nil
 	}
 
-	// Default mode: return error telling LLM to call directly
-	if !anyAllowChain {
-		first := matches[0].binary
+	if len(scan.dynamicCommands) > 0 {
+		return ErrorResult(fmt.Sprintf(
+			"Credentialed chain contains dynamic command names that GoClaw cannot audit before injecting credentials: %s",
+			strings.Join(scan.dynamicCommands, "; ")))
+	}
+
+	var disallowed []string
+	for _, m := range matches {
+		if !m.cred.AllowChainExec {
+			disallowed = append(disallowed, m.binary)
+		}
+	}
+	if len(disallowed) > 0 {
 		return &Result{
-			ForLLM: fmt.Sprintf("[CREDENTIALED CLI] Command contains credentialed binary %q but uses shell operators.\n"+
-				"Shell operators (;  &&  ||  |) prevent credential injection.\n"+
-				"Call the CLI directly as the ONLY command: exec(\"%s ...\")\n"+
-				"Do NOT combine with other commands, pipes, or redirects.", first, first),
-			ForUser: fmt.Sprintf("Command contains %q with shell operators — call it directly.", first),
+			ForLLM: fmt.Sprintf("[CREDENTIALED CLI] Command uses shell syntax with credentialed binary/binaries: %s.\n"+
+				"Shell-chain credential injection is disabled for at least one of them.\n"+
+				"Call each CLI directly as a standalone command, or ask admin to enable allow_chain_exec for every credentialed CLI in the chain.",
+				strings.Join(disallowed, ", ")),
+			ForUser: fmt.Sprintf("Credentialed shell chain disabled for: %s.", strings.Join(disallowed, ", ")),
 			IsError: true,
 		}
 	}
@@ -815,25 +1058,17 @@ func (t *ExecTool) handleCredentialedChain(ctx context.Context, normalizedCmd, r
 
 	envMap := make(map[string]string)
 	for _, m := range matches {
-		if len(m.cred.EncryptedEnv) > 0 {
-			var credEnv map[string]string
-			if err := json.Unmarshal(m.cred.EncryptedEnv, &credEnv); err == nil {
-				for k, v := range credEnv {
-					envMap[k] = v
-				}
-			}
+		credEnv, err := credentialedEnvMap(m.binary, m.cred)
+		if err != nil {
+			return ErrorResult("credentialed chain exec: " + err.Error())
 		}
-		// Merge per-user env overrides
-		if len(m.cred.UserEnv) > 0 {
-			var userEnvMap map[string]string
-			if err := json.Unmarshal(m.cred.UserEnv, &userEnvMap); err == nil {
-				for k, v := range userEnvMap {
-					envMap[k] = v
-				}
+		for k, v := range credEnv {
+			if existing, ok := envMap[k]; ok && existing != v {
+				return ErrorResult(fmt.Sprintf(
+					"credentialed chain exec: conflicting credential env var %q between matched CLIs; split the command into separate exec calls.",
+					k))
 			}
-		}
-		// Register for output scrubbing
-		for _, v := range envMap {
+			envMap[k] = v
 			AddCredentialScrubValues(v)
 		}
 	}
