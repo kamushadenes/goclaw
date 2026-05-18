@@ -26,10 +26,6 @@ const (
 
 	// Uniqueness ratio threshold: above this = exploration, below = stuck.
 	readOnlyUniquenessThreshold = 0.6
-
-	// Same-result: same tool returning identical results with different args.
-	sameResultWarning  = 4
-	sameResultCritical = 6
 )
 
 // mutatingTools are tools that indicate real progress (write/create/action).
@@ -240,34 +236,6 @@ func (s *toolLoopState) detectReadOnlyStreak() (level, message string) {
 	return "", ""
 }
 
-// detectSameResult checks if the same tool returned identical results multiple
-// times with different arguments. This catches loops where the agent varies
-// args slightly but gets no new information.
-func (s *toolLoopState) detectSameResult(toolName, resultHash string) (level, message string) {
-	if resultHash == "" {
-		return "", ""
-	}
-	var count int
-	for _, rec := range s.history {
-		if rec.toolName == toolName && rec.resultHash == resultHash {
-			count++
-		}
-	}
-	if count >= sameResultCritical {
-		return "critical", fmt.Sprintf(
-			"CRITICAL: %s returned identical results %d times (with different arguments). "+
-				"Stopping to prevent runaway loop.", toolName, count)
-	}
-	if count >= sameResultWarning {
-		return "warning", fmt.Sprintf(
-			"[System: WARNING — %s has returned the same result %d times with different arguments. "+
-				"The information is already in your context. Stop re-reading and take action — "+
-				"use edit/write_file to modify files, or respond to the user if you are stuck.]",
-			toolName, count)
-	}
-	return "", ""
-}
-
 // hashToolCall produces a deterministic hash of tool name + arguments.
 func hashToolCall(toolName string, args map[string]any) string {
 	s := toolName + ":" + stableJSON(args)
@@ -279,24 +247,6 @@ func hashToolCall(toolName string, args map[string]any) string {
 func hashResult(content string) string {
 	h := sha256.Sum256([]byte(content))
 	return fmt.Sprintf("%x", h[:16])
-}
-
-func hashResultForSameResult(toolName, content string, isError bool) string {
-	if !isError && isLowSignalSameResult(toolName, content) {
-		return ""
-	}
-	return hashResult(content)
-}
-
-func isLowSignalSameResult(toolName, content string) bool {
-	trimmed := strings.TrimSpace(content)
-	if trimmed == "" {
-		return true
-	}
-	if (toolName == "exec" || toolName == "bash") && trimmed == "(command completed with no output)" {
-		return true
-	}
-	return false
 }
 
 // stableJSON serializes a value with sorted keys for deterministic hashing.

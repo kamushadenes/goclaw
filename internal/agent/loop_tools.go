@@ -132,21 +132,6 @@ func (l *Loop) processToolResult(
 		action = toolResultWarning
 	}
 
-	// Check for same tool returning identical results with different args.
-	if rh := hashResultForSameResult(registryName, result.ForLLM, result.IsError); rh != "" {
-		if level, msg := rs.loopDetector.detectSameResult(registryName, rh); level != "" {
-			if level == "critical" {
-				slog.Warn("tool loop critical: same result",
-					"tool", registryName, "agent", l.id, "run", req.RunID)
-				rs.finalContent = msg
-				rs.loopKilled = true
-				return toolMsg, nil, toolResultBreak
-			}
-			warningMsgs = append(warningMsgs, providers.Message{Role: "user", Content: msg})
-			action = toolResultWarning
-		}
-	}
-
 	return toolMsg, warningMsgs, action
 }
 

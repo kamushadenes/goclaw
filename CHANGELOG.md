@@ -45,9 +45,9 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 - **GitHub CLI credential preset allows `gh auth setup-git`.** The `gh` deny
   list now blocks token-producing or account-changing auth subcommands while
   allowing the setup command required before authenticated `git` network calls.
-- **Loop detection ignores successful no-output exec calls.** Distinct commands
-  such as `git config`, `git add`, and other successful no-output shell steps no
-  longer trip the same-result runaway guard.
+- **Removed cross-argument same-result loop killing.** GoClaw no longer stops
+  an agent merely because different tool calls returned identical text. The
+  same-arguments no-progress guard remains.
 - **Skill activation returns instructions.** `use_skill` now returns the
   selected `SKILL.md` content plus bundled markdown references, so agents can
   follow skills even when `read_file` is not available in their tool set.
