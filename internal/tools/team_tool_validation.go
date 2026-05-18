@@ -79,7 +79,11 @@ func (m *TeamToolManager) ProcessPendingTasks(ctx context.Context, teamID uuid.U
 		return fmt.Errorf("cannot fetch team %s: %w", teamID, err)
 	}
 
-	// Dispatch pending assigned tasks (not blocked, not failed).
+	// Dispatch pending assigned tasks (not blocked, not failed). Only dispatch
+	// one task per owner in this post-turn pass; additional tasks for the same
+	// owner remain pending and are picked up after the active task completes.
+	dispatchedOwners := make(map[uuid.UUID]bool)
+	dispatchedCount := 0
 	for _, task := range tasks {
 		if _, isCycled := cycled[task.ID]; isCycled {
 			continue
@@ -94,10 +98,16 @@ func (m *TeamToolManager) ProcessPendingTasks(ctx context.Context, teamID uuid.U
 		if *task.OwnerAgentID == team.LeadAgentID {
 			continue
 		}
-		if err := m.teamStore.AssignTask(ctx, task.ID, *task.OwnerAgentID, teamID); err != nil {
+		ownerID := *task.OwnerAgentID
+		if dispatchedOwners[ownerID] {
+			continue
+		}
+		if err := m.teamStore.AssignTask(ctx, task.ID, ownerID, teamID); err != nil {
 			slog.Warn("post_turn: assign failed", "task_id", task.ID, "error", err)
 			continue
 		}
+		dispatchedOwners[ownerID] = true
+		dispatchedCount++
 		taskPeerKind := ""
 		if pk, ok := task.Metadata[TaskMetaPeerKind].(string); ok {
 			taskPeerKind = pk
@@ -111,7 +121,7 @@ func (m *TeamToolManager) ProcessPendingTasks(ctx context.Context, teamID uuid.U
 			store.TeamTaskStatusInProgress,
 			"system", "post_turn",
 			WithTaskInfo(task.TaskNumber, task.Subject),
-			WithOwnerAgentKey(m.agentKeyFromID(ctx, *task.OwnerAgentID)),
+			WithOwnerAgentKey(m.agentKeyFromID(ctx, ownerID)),
 			WithChannel(task.Channel),
 			WithChatID(task.ChatID),
 			WithPeerKind(taskPeerKind),
@@ -120,13 +130,13 @@ func (m *TeamToolManager) ProcessPendingTasks(ctx context.Context, teamID uuid.U
 		// Restore leader's trace context from task metadata (ctx here is the
 		// consumer goroutine context which has no trace after the turn ends).
 		dispatchCtx := m.restoreTraceContext(ctx, task)
-		m.dispatchTaskToAgent(dispatchCtx, task, team, *task.OwnerAgentID)
+		m.dispatchTaskToAgent(dispatchCtx, task, team, ownerID)
 	}
 
 	slog.Info("post_turn: processed pending tasks",
 		"team_id", teamID,
 		"total", len(tasks),
-		"dispatched", countPendingAssigned(tasks, cycled, invalidRef),
+		"dispatched", dispatchedCount,
 	)
 	return nil
 }

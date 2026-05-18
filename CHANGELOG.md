@@ -48,6 +48,10 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 - **Removed cross-argument same-result loop killing.** GoClaw no longer stops
   an agent merely because different tool calls returned identical text. The
   same-arguments no-progress guard remains.
+- **Team task post-turn dispatch is per-owner.** When a lead creates multiple
+  ready tasks for the same member in one turn, GoClaw now dispatches only the
+  first task immediately and leaves the rest pending until the member completes
+  the active task.
 - **Skill activation returns instructions.** `use_skill` now returns the
   selected `SKILL.md` content plus bundled markdown references, so agents can
   follow skills even when `read_file` is not available in their tool set.
