@@ -37,6 +37,9 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Improvements
 
+- **Skill activation returns instructions.** `use_skill` now returns the
+  selected `SKILL.md` content plus bundled markdown references, so agents can
+  follow skills even when `read_file` is not available in their tool set.
 - **Sandboxed skill reads.** `read_file` and `list_files` can now follow
   `skill_search` / `use_skill` locations under the read-only
   `/app/data/skills-store` mount instead of falling back to the workspace root.
