@@ -19,7 +19,7 @@ type CLIPreset struct {
 type EnvVarDef struct {
 	Name     string `json:"name"`
 	Desc     string `json:"desc"`
-	IsFile   bool   `json:"is_file,omitempty"`   // credential is a file path (e.g. GOOGLE_APPLICATION_CREDENTIALS)
+	IsFile   bool   `json:"is_file,omitempty"` // credential is a file path (e.g. GOOGLE_APPLICATION_CREDENTIALS)
 	Optional bool   `json:"optional,omitempty"`
 }
 
@@ -29,7 +29,7 @@ var CLIPresets = map[string]CLIPreset{
 		BinaryName:  "gh",
 		Description: "GitHub CLI",
 		EnvVars:     []EnvVarDef{{Name: "GH_TOKEN", Desc: "GitHub PAT or App token"}},
-		DenyArgs:    []string{`auth\s+`, `ssh-key`, `gpg-key`, `repo\s+delete`, `secret\s+`},
+		DenyArgs:    []string{`auth\s+(login|logout|refresh|switch|token)`, `--show-token`, `ssh-key`, `gpg-key`, `repo\s+delete`, `secret\s+`},
 		DenyVerbose: []string{`--verbose`, `-v`},
 		Timeout:     30,
 		Tips:        "Use --json flag for structured output",

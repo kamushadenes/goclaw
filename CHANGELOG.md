@@ -42,6 +42,9 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   shell command, checks every command segment, blocks ungranted registered
   CLIs, enforces deny/verbose policies before execution, and injects all matched
   credential env vars into the subprocess.
+- **GitHub CLI credential preset allows `gh auth setup-git`.** The `gh` deny
+  list now blocks token-producing or account-changing auth subcommands while
+  allowing the setup command required before authenticated `git` network calls.
 - **Loop detection ignores successful no-output exec calls.** Distinct commands
   such as `git config`, `git add`, and other successful no-output shell steps no
   longer trip the same-result runaway guard.

@@ -205,3 +205,30 @@ func TestMatchesBinaryDenyJoinedArgs(t *testing.T) {
 		})
 	}
 }
+
+func TestGHPresetAllowsSetupGitButBlocksUnsafeAuth(t *testing.T) {
+	preset := CLIPresets["gh"]
+	patterns, err := json.Marshal(preset.DenyArgs)
+	if err != nil {
+		t.Fatalf("marshal gh preset deny args: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		args    []string
+		wantHit bool
+	}{
+		{"setup git allowed", []string{"auth", "setup-git"}, false},
+		{"auth token blocked", []string{"auth", "token"}, true},
+		{"auth status show token blocked", []string{"auth", "status", "--show-token"}, true},
+		{"auth login blocked", []string{"auth", "login"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := matchesBinaryDeny(tt.args, patterns)
+			if (got != "") != tt.wantHit {
+				t.Errorf("matchesBinaryDeny(%v) = %q, wantHit=%v", tt.args, got, tt.wantHit)
+			}
+		})
+	}
+}
