@@ -52,6 +52,9 @@ All notable changes to GoClaw are documented here. For full documentation, see [
   ready tasks for the same member in one turn, GoClaw now dispatches only the
   first task immediately and leaves the rest pending until the member completes
   the active task.
+- **Team task retry clears dispatch circuit state.** Retrying a failed, stale,
+  or completed team task now resets its dispatch counter so manual retries can
+  actually re-dispatch after infrastructure-side failures.
 - **Skill activation returns instructions.** `use_skill` now returns the
   selected `SKILL.md` content plus bundled markdown references, so agents can
   follow skills even when `read_file` is not available in their tool set.

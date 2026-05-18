@@ -195,6 +195,9 @@ func TestRetry(t *testing.T) {
 	t.Run("LeadSuccess", func(t *testing.T) {
 		mb, tool, leadID, memberID, ctx := newTestTeamSetup()
 		taskID := makeTask(mb, testTeamID, memberID, store.TeamTaskStatusFailed)
+		mb.taskStore.mu.Lock()
+		mb.taskStore.tasks[taskID].Metadata = map[string]any{"dispatch_count": float64(3), "keep": "value"}
+		mb.taskStore.mu.Unlock()
 
 		leadCtx := store.WithAgentID(ctx, leadID)
 		leadCtx = WithTaskActionFlags(leadCtx, &TaskActionFlags{})
@@ -215,6 +218,12 @@ func TestRetry(t *testing.T) {
 
 		if task.Status != store.TeamTaskStatusInProgress {
 			t.Errorf("expected task status=in_progress after retry, got %s", task.Status)
+		}
+		if _, ok := task.Metadata["dispatch_count"]; ok {
+			t.Error("expected retry to clear dispatch_count")
+		}
+		if task.Metadata["keep"] != "value" {
+			t.Errorf("expected retry to preserve unrelated metadata, got %v", task.Metadata)
 		}
 
 		// Dispatch should have been called

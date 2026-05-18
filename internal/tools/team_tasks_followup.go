@@ -120,6 +120,12 @@ func (t *TeamTasksTool) executeRetry(ctx context.Context, args map[string]any) *
 	if err := t.manager.Store().ResetTaskStatus(ctx, taskID, team.ID); err != nil {
 		return ErrorResult("failed to reset task: " + err.Error())
 	}
+	if len(task.Metadata) > 0 {
+		delete(task.Metadata, "dispatch_count")
+		if err := t.manager.Store().UpdateTask(ctx, taskID, map[string]any{"metadata": task.Metadata}); err != nil {
+			return ErrorResult("failed to reset task dispatch counter: " + err.Error())
+		}
+	}
 	// Assign (pending → in_progress + lock).
 	if err := t.manager.Store().AssignTask(ctx, taskID, *task.OwnerAgentID, team.ID); err != nil {
 		return ErrorResult("failed to retry task: " + err.Error())
