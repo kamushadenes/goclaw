@@ -175,7 +175,8 @@ type SlackConfig struct {
 	HistoryLimit   int                 `json:"history_limit,omitempty"`   // max pending group messages for context (default 50, 0=disabled)
 	DMStream       *bool               `json:"dm_stream,omitempty"`       // enable streaming for DMs (default false)
 	GroupStream    *bool               `json:"group_stream,omitempty"`    // enable streaming for groups (default false)
-	NativeStream   *bool               `json:"native_stream,omitempty"`   // use Slack ChatStreamer API if available (default false)
+	NativeStream   *bool               `json:"native_stream,omitempty"`   // deprecated compatibility field; use agent_mode
+	AgentMode      *bool               `json:"agent_mode,omitempty"`      // use Slack Agent APIs for status, streaming, and context (default false)
 	ReactionLevel  string              `json:"reaction_level,omitempty"`  // "off" (default), "minimal", "full"
 	BlockReply     *bool               `json:"block_reply,omitempty"`     // override gateway block_reply (nil = inherit)
 	ChatBehavior   *ChatBehaviorConfig `json:"chat_behavior,omitempty"`   // override gateway chat behavior (nil = inherit)

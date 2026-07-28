@@ -1,7 +1,12 @@
 package slack
 
 import (
+	"encoding/json"
 	"testing"
+
+	"github.com/slack-go/slack/slackevents"
+
+	"github.com/nextlevelbuilder/goclaw/internal/config"
 )
 
 func TestIsAllowedDownloadHost(t *testing.T) {
@@ -114,5 +119,138 @@ func TestIsAllowedDownloadHost(t *testing.T) {
 				t.Errorf("isAllowedDownloadHost(%q) = %v, want %v", tt.rawURL, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestAppContextChangedEventParsingAndPerUserTracking(t *testing.T) {
+	raw := json.RawMessage(`{
+		"token": "verification-token",
+		"team_id": "T123",
+		"api_app_id": "A123",
+		"type": "event_callback",
+		"event": {
+			"type": "app_context_changed",
+			"context": {
+				"entities": [
+					{
+						"type": "slack#/types/channel_id",
+						"value": "C456",
+						"team_id": "T123"
+					}
+				]
+			},
+			"event_ts": "1700000000.000001"
+		},
+		"authorizations": [
+			{
+				"team_id": "T123",
+				"user_id": "U123",
+				"is_bot": false
+			}
+		],
+		"event_id": "Ev123",
+		"event_time": 1700000000
+	}`)
+
+	event, err := slackevents.ParseEvent(raw, slackevents.OptionNoVerifyToken())
+	if err != nil {
+		t.Fatalf("ParseEvent() error = %v", err)
+	}
+	contextEvent, ok := event.InnerEvent.Data.(*appContextChangedEvent)
+	if !ok {
+		t.Fatalf("inner event type = %T, want *appContextChangedEvent", event.InnerEvent.Data)
+	}
+
+	enabled := true
+	ch := newTestSlackChannel(t, config.SlackConfig{AgentMode: &enabled})
+	ch.trackAppContextChanged(contextEvent, raw)
+
+	state, ok := ch.loadAgentContext("U123")
+	if !ok {
+		t.Fatal("app context was not stored for the authorized user")
+	}
+	var trackedContext slackAppContext
+	if err := json.Unmarshal(state.context, &trackedContext); err != nil {
+		t.Fatalf("decode tracked context: %v", err)
+	}
+	if len(trackedContext.Entities) != 1 {
+		t.Fatalf("tracked entity count = %d, want 1", len(trackedContext.Entities))
+	}
+	if metadata := ch.agentContextMetadata("U123"); metadata == "" {
+		t.Fatal("tracked app context was not exposed to inbound metadata")
+	}
+	if _, ok := ch.loadAgentContext("U999"); ok {
+		t.Fatal("app context leaked to an unrelated user")
+	}
+}
+
+func TestAppHomeOpenedMessagesEventRetainsContext(t *testing.T) {
+	raw := json.RawMessage(`{
+		"token": "verification-token",
+		"team_id": "T123",
+		"api_app_id": "A123",
+		"type": "event_callback",
+		"event": {
+			"type": "app_home_opened",
+			"user": "U123",
+			"channel": "D123",
+			"tab": "messages",
+			"context": {
+				"entities": [
+					{
+						"type": "slack#/types/channel_id",
+						"value": "C456",
+						"team_id": "T123"
+					}
+				]
+			},
+			"event_ts": "1700000000.000001"
+		},
+		"event_id": "Ev123",
+		"event_time": 1700000000
+	}`)
+
+	event, err := slackevents.ParseEvent(raw, slackevents.OptionNoVerifyToken())
+	if err != nil {
+		t.Fatalf("ParseEvent() error = %v", err)
+	}
+	homeEvent, ok := event.InnerEvent.Data.(*appHomeOpenedEvent)
+	if !ok {
+		t.Fatalf("inner event type = %T, want *appHomeOpenedEvent", event.InnerEvent.Data)
+	}
+
+	enabled := true
+	ch := newTestSlackChannel(t, config.SlackConfig{AgentMode: &enabled})
+	ch.trackAppHomeOpened(homeEvent)
+	state, ok := ch.loadAgentContext("U123")
+	if !ok {
+		t.Fatal("app_home_opened messages context was not tracked")
+	}
+	if state.containerChannelID != "D123" {
+		t.Errorf("container channel = %q, want D123", state.containerChannelID)
+	}
+	var trackedContext slackAppContext
+	if err := json.Unmarshal(state.context, &trackedContext); err != nil {
+		t.Fatalf("decode tracked context: %v", err)
+	}
+	if len(trackedContext.Entities) != 1 {
+		t.Errorf("tracked entity count = %d, want 1", len(trackedContext.Entities))
+	}
+}
+
+func TestAssistantThreadStartedSuppliesMissingMessageThread(t *testing.T) {
+	enabled := true
+	ch := newTestSlackChannel(t, config.SlackConfig{AgentMode: &enabled})
+	ch.trackAssistantThread(slackevents.AssistantThread{
+		UserID:          "U123",
+		ChannelID:       "D123",
+		ThreadTimeStamp: "1700000000.000001",
+	}, "assistant_thread_started")
+
+	if got := ch.agentThreadTS("U123", "D123", "", "1700000001.000002"); got != "1700000000.000001" {
+		t.Errorf("agentThreadTS() = %q, want tracked assistant thread", got)
+	}
+	if got := ch.agentThreadTS("U999", "D123", "", "1700000001.000002"); got != "1700000001.000002" {
+		t.Errorf("unrelated user thread = %q, want triggering message timestamp", got)
 	}
 }
