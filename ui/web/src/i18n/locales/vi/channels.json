@@ -450,9 +450,9 @@
       "label": "Người dùng nhóm được phép",
       "help": "Danh sách cho phép riêng cho người gửi nhóm"
     },
-    "native_stream": {
-      "label": "Stream gốc (Agents & AI Apps)",
-      "help": "Dùng API ChatStreamer của Slack cho stream gốc. Quay về chỉnh sửa tại chỗ nếu không khả dụng."
+    "agent_mode": {
+      "label": "Slack Agent API",
+      "help": "Dùng API trạng thái, truyền trực tiếp và ngữ cảnh ứng dụng gốc. Yêu cầu Slack Agents & AI Apps và đăng ký sự kiện Agent."
     },
     "debounce_delay": {
       "label": "Độ trễ debounce (ms)",

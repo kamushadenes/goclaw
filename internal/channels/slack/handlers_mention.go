@@ -58,6 +58,7 @@ func (c *Channel) handleAppMention(ev *slackevents.AppMentionEvent) {
 	if threadTS != "" {
 		localKey = fmt.Sprintf("%s:thread:%s", channelID, threadTS)
 	}
+	historyKey := localKey
 
 	slog.Debug("slack app_mention received",
 		"sender_id", senderID, "channel_id", channelID,
@@ -67,23 +68,15 @@ func (c *Channel) handleAppMention(ev *slackevents.AppMentionEvent) {
 	if replyThreadTS == "" {
 		replyThreadTS = ev.TimeStamp
 	}
-
-	placeholderOpts := []slackapi.MsgOption{
-		slackapi.MsgOptionText("Thinking...", false),
+	if c.agentModeEnabled() && replyThreadTS != "" {
+		localKey = fmt.Sprintf("%s:thread:%s", channelID, replyThreadTS)
 	}
-	if replyThreadTS != "" {
-		placeholderOpts = append(placeholderOpts, slackapi.MsgOptionTS(replyThreadTS))
-	}
-
-	_, placeholderTS, err := c.api.PostMessage(channelID, placeholderOpts...)
-	if err == nil {
-		c.placeholders.Store(localKey, placeholderTS)
-	}
+	c.startResponseIndicator(ctx, channelID, localKey, replyThreadTS, senderID, true)
 
 	annotated := fmt.Sprintf("[From: %s]\n%s", displayName, content)
 	finalContent := annotated
 	if c.HistoryLimit() > 0 {
-		finalContent = c.GroupHistory().BuildContext(localKey, annotated, c.HistoryLimit())
+		finalContent = c.GroupHistory().BuildContext(historyKey, annotated, c.HistoryLimit())
 	}
 
 	metadata := map[string]string{
@@ -98,6 +91,9 @@ func (c *Channel) handleAppMention(ev *slackevents.AppMentionEvent) {
 	if replyThreadTS != "" {
 		metadata["message_thread_id"] = replyThreadTS
 	}
+	if appContext := c.agentContextMetadata(senderID); appContext != "" {
+		metadata["slack_app_context"] = appContext
+	}
 
 	c.HandleAuthorizedMessage(senderID, channelID, finalContent, nil, metadata, "group")
 
@@ -107,7 +103,7 @@ func (c *Channel) handleAppMention(ev *slackevents.AppMentionEvent) {
 		c.threadParticip.Store(participKey, time.Now())
 	}
 
-	c.GroupHistory().Clear(localKey)
+	c.GroupHistory().Clear(historyKey)
 }
 
 // isBotMentioned checks if the message text contains <@botUserID>.

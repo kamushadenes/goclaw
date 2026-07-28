@@ -27,6 +27,7 @@ type slackInstanceConfig struct {
 	DMStream       *bool                      `json:"dm_stream,omitempty"`
 	GroupStream    *bool                      `json:"group_stream,omitempty"`
 	NativeStream   *bool                      `json:"native_stream,omitempty"`
+	AgentMode      *bool                      `json:"agent_mode,omitempty"`
 	ReactionLevel  string                     `json:"reaction_level,omitempty"`
 	BlockReply     *bool                      `json:"block_reply,omitempty"`
 	ChatBehavior   *config.ChatBehaviorConfig `json:"chat_behavior,omitempty"`
@@ -71,6 +72,7 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 		DMStream:       ic.DMStream,
 		GroupStream:    ic.GroupStream,
 		NativeStream:   ic.NativeStream,
+		AgentMode:      ic.AgentMode,
 		ReactionLevel:  ic.ReactionLevel,
 		BlockReply:     ic.BlockReply,
 		ChatBehavior:   ic.ChatBehavior,
@@ -129,6 +131,7 @@ func FactoryWithPendingStore(pendingStore store.PendingMessageStore) channels.Ch
 			DMStream:       ic.DMStream,
 			GroupStream:    ic.GroupStream,
 			NativeStream:   ic.NativeStream,
+			AgentMode:      ic.AgentMode,
 			ReactionLevel:  ic.ReactionLevel,
 			BlockReply:     ic.BlockReply,
 			ChatBehavior:   ic.ChatBehavior,

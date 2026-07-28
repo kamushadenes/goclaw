@@ -365,9 +365,9 @@
       "label": "그룹 허용된 사용자",
       "help": "그룹 발신자를 위한 별도 허용 목록"
     },
-    "native_stream": {
-      "label": "네이티브 스트리밍 (에이전트 & AI 앱)",
-      "help": "네이티브 스트리밍을 위해 Slack의 ChatStreamer API 사용. 사용 불가 시 편집-인-플레이스로 폴백됩니다."
+    "agent_mode": {
+      "label": "Slack Agent API",
+      "help": "네이티브 상태, 스트리밍 및 앱 컨텍스트 API를 사용합니다. Slack Agents & AI Apps와 Agent 이벤트 구독이 필요합니다."
     },
     "debounce_delay": {
       "label": "디바운스 지연 (ms)",

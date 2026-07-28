@@ -184,7 +184,7 @@ export const configSchema: Record<string, FieldDef[]> = {
     { key: "history_limit", label: "Group History Limit", type: "number", defaultValue: 50, help: "Max pending group messages for context (0 = disabled)" },
     { key: "dm_stream", label: "DM Streaming", type: "boolean", defaultValue: true, help: "Progressively edit placeholder message as LLM generates (DMs)" },
     { key: "group_stream", label: "Group Streaming", type: "boolean", defaultValue: false, help: "Progressively edit placeholder message as LLM generates (channels)" },
-    { key: "native_stream", label: "Native Streaming (Agents & AI Apps)", type: "boolean", defaultValue: false, help: "Use Slack's ChatStreamer API for native streaming. Falls back to edit-in-place if unavailable." },
+    { key: "agent_mode", label: "Slack Agent API", type: "boolean", defaultValue: false, help: "Use native status, streaming, and app context APIs. Requires Slack Agents & AI Apps plus Agent event subscriptions." },
     { key: "debounce_delay", label: "Debounce Delay (ms)", type: "number", defaultValue: 300, help: "Milliseconds to wait before dispatching rapid messages. Set 0 to disable." },
     { key: "thread_ttl", label: "Thread Participation TTL (hours)", type: "number", defaultValue: 24, help: "Hours before bot stops auto-replying in threads it participated in. 0 = always require @mention." },
     { key: "reaction_level", label: "Reaction Level", type: "select", options: [{ value: "off", label: "Off" }, { value: "minimal", label: "Minimal (thinking + done)" }, { value: "full", label: "Full (all status emoji)" }], defaultValue: "off", help: "Show emoji reactions on user messages during agent processing" },

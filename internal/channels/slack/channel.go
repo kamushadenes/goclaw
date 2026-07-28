@@ -36,10 +36,13 @@ type Channel struct {
 	botUserID string // populated on Start() via auth.test
 	teamID    string // populated on Start() via auth.test
 
-	placeholders   sync.Map // localKey -> placeholderTS
-	dedup          sync.Map // channel+ts -> time.Time
-	threadParticip sync.Map // channelID+threadTS -> time.Time (auto-reply without @mention)
-	reactions      sync.Map // chatID:messageID -> *reactionState
+	placeholders     sync.Map // localKey -> placeholderTS
+	dedup            sync.Map // channel+ts -> time.Time
+	threadParticip   sync.Map // channelID+threadTS -> time.Time (auto-reply without @mention)
+	reactions        sync.Map // chatID:messageID -> *reactionState
+	agentThreads     sync.Map // localKey -> agentThreadState
+	agentContexts    sync.Map // Slack user ID -> agentContextState
+	completedStreams sync.Map // localKey -> completedSlackStream
 
 	// High-churn map: sync.Mutex + regular map for debounce timers
 	debounceMu     sync.Mutex
@@ -220,6 +223,27 @@ func (c *Channel) sweepMaps() {
 	c.dedup.Range(func(k, v any) bool {
 		if t, ok := v.(time.Time); ok && now.Sub(t) > 5*time.Minute {
 			c.dedup.Delete(k)
+		}
+		return true
+	})
+
+	c.agentThreads.Range(func(k, v any) bool {
+		if state, ok := v.(agentThreadState); ok && now.Sub(state.updatedAt) > agentStateTTL {
+			c.agentThreads.Delete(k)
+		}
+		return true
+	})
+
+	c.agentContexts.Range(func(k, v any) bool {
+		if state, ok := v.(agentContextState); ok && now.Sub(state.updatedAt) > agentContextTTL {
+			c.agentContexts.Delete(k)
+		}
+		return true
+	})
+
+	c.completedStreams.Range(func(k, v any) bool {
+		if state, ok := v.(completedSlackStream); ok && now.Sub(state.completedAt) > completedStreamTTL {
+			c.completedStreams.Delete(k)
 		}
 		return true
 	})
