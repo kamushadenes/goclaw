@@ -450,9 +450,9 @@
       "label": "群组允许的用户",
       "help": "群组发送者的单独白名单"
     },
-    "native_stream": {
-      "label": "原生流式传输 (Agents & AI Apps)",
-      "help": "使用 Slack 的 ChatStreamer API 进行原生流式传输。不可用时回退到原地编辑。"
+    "agent_mode": {
+      "label": "Slack Agent API",
+      "help": "使用原生状态、流式传输和应用上下文 API。需要启用 Slack Agents & AI Apps 并订阅 Agent 事件。"
     },
     "debounce_delay": {
       "label": "防抖延迟 (ms)",
