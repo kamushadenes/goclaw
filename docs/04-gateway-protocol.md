@@ -112,7 +112,7 @@ flowchart LR
 |------|--------------------|
 | viewer | `agents.list`, `config.get`, `sessions.list`, `sessions.preview`, `health`, `status`, `providers.models`, `skills.list`, `skills.get`, `channels.list`, `channels.status`, `cron.list`, `cron.status`, `cron.runs`, `usage.get`, `usage.summary` |
 | operator | All viewer methods plus: `chat.send`, `chat.abort`, `chat.history`, `chat.inject`, `sessions.delete`, `sessions.reset`, `sessions.patch`, `cron.create`, `cron.update`, `cron.delete`, `cron.toggle`, `cron.run`, `skills.update`, `send`, `exec.approval.list`, `exec.approval.approve`, `exec.approval.deny`, `device.pair.request`, `device.pair.list` |
-| admin | All operator methods plus: `config.apply`, `config.patch`, `config.permissions.*`, `agents.create`, `agents.update`, `agents.delete`, `agents.files.*`, `teams.*`, `channels.toggle`, `device.pair.approve`, `device.pair.revoke` |
+| admin | All operator methods plus: `config.apply`, `config.patch`, `config.permissions.*`, `agents.create`, `agents.update`, `agents.delete`, `agents.files.*`, `teams.*`, `channels.toggle`, `device.pair.approve`, `device.pair.revoke`, `device.pair.update` |
 
 ---
 
@@ -233,9 +233,10 @@ flowchart TD
 | Method | Description |
 |--------|-------------|
 | `device.pair.request` | Request a pairing code |
-| `device.pair.approve` | Approve a pairing request |
+| `device.pair.approve` | Approve a pairing request (optional `permanent`) |
 | `device.pair.list` | List paired devices |
 | `device.pair.revoke` | Revoke a paired device |
+| `device.pair.update` | Make a paired device permanent or restore the default TTL |
 | `browser.pairing.status` | Poll browser pairing approval status |
 
 ### Exec Approval
@@ -288,6 +289,8 @@ flowchart TD
 | `teams.tasks.delete` | Delete a task |
 | `teams.tasks.claim` | Claim a task (mark as in-progress) |
 | `teams.tasks.assign` | Assign task to member |
+| `teams.tasks.cancel` | Cancel an unfinished task from the dashboard |
+| `teams.tasks.retry` | Re-dispatch a stuck task to its assignee with a required human comment |
 | `teams.tasks.approve` | Approve completed task |
 | `teams.tasks.reject` | Reject task submission |
 | `teams.tasks.comment` | Add comment to task |

@@ -298,6 +298,11 @@ func (h *ProvidersHandler) registerInMemory(p *store.LLMProviderData) providerRu
 	}
 	apiBase := h.resolveAPIBase(p)
 	switch p.ProviderType {
+	case store.ProviderAPIRoute:
+		if apiBase == "" {
+			apiBase = store.APIRouteDefaultAPIBase
+		}
+		h.providerReg.RegisterForTenant(p.TenantID, providers.NewOpenAIProvider(p.Name, p.APIKey, apiBase, store.APIRouteDefaultModel).WithProviderType(p.ProviderType))
 	case store.ProviderChatGPTOAuth:
 		ts := oauth.NewDBTokenSource(h.store, h.secretStore, p.Name).WithTenantID(p.TenantID)
 		codex := providers.NewCodexProvider(p.Name, ts, apiBase, "")
@@ -400,6 +405,16 @@ func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 			apiBase = store.MiniMaxDefaultAPIBase
 		}
 		return apiBase, store.MiniMaxDefaultModel
+	case store.ProviderAtlasCloud:
+		if apiBase == "" {
+			apiBase = store.AtlasCloudDefaultAPIBase
+		}
+		return apiBase, store.AtlasCloudDefaultModel
+	case store.ProviderRequesty:
+		if apiBase == "" {
+			apiBase = store.RequestyDefaultAPIBase
+		}
+		return apiBase, store.RequestyDefaultModel
 	default:
 		return apiBase, ""
 	}
@@ -813,6 +828,7 @@ func (h *ProvidersHandler) handleUpdateProvider(w http.ResponseWriter, r *http.R
 			return
 		}
 		candidate.Settings = rawSettings
+		updates["settings"] = rawSettings
 	}
 
 	// Re-validate URLs against the (possibly new) provider type.

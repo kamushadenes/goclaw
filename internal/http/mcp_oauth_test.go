@@ -264,6 +264,37 @@ func newTestMCPOAuthHandler(
 // callbackURL helper tests
 // --------------------------------------------------------------------------
 
+func TestDropboxOfflineAuthParam(t *testing.T) {
+	tests := []struct {
+		name  string
+		endpt string
+		wantK string
+		wantV string
+	}{
+		{"dropbox www host", "https://www.dropbox.com/oauth2/authorize", "token_access_type", "offline"},
+		{"dropbox api subdomain", "https://api.dropbox.com/oauth2/authorize", "token_access_type", "offline"},
+		{"non-dropbox returns nil", "https://auth.example.com/authorize", "", ""},
+		{"malformed url returns nil", "://not-a-url", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dropboxOfflineAuthParam(tt.endpt)
+			if tt.wantK == "" {
+				if got != nil {
+					t.Errorf("dropboxOfflineAuthParam(%q) = %v, want nil", tt.endpt, got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("dropboxOfflineAuthParam(%q) = nil, want %s=%s", tt.endpt, tt.wantK, tt.wantV)
+			}
+			if v := got.Get(tt.wantK); v != tt.wantV {
+				t.Errorf("dropboxOfflineAuthParam(%q)[%s] = %q, want %q", tt.endpt, tt.wantK, v, tt.wantV)
+			}
+		})
+	}
+}
+
 func TestCallbackURLPublicURL(t *testing.T) {
 	h := &MCPOAuthHandler{publicURL: "https://goclaw.example.com"}
 	r := httptest.NewRequest(http.MethodGet, "/", nil)

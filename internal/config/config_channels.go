@@ -175,7 +175,8 @@ type SlackConfig struct {
 	HistoryLimit   int                 `json:"history_limit,omitempty"`   // max pending group messages for context (default 50, 0=disabled)
 	DMStream       *bool               `json:"dm_stream,omitempty"`       // enable streaming for DMs (default false)
 	GroupStream    *bool               `json:"group_stream,omitempty"`    // enable streaming for groups (default false)
-	NativeStream   *bool               `json:"native_stream,omitempty"`   // use Slack ChatStreamer API if available (default false)
+	NativeStream   *bool               `json:"native_stream,omitempty"`   // deprecated compatibility field; use agent_mode
+	AgentMode      *bool               `json:"agent_mode,omitempty"`      // use Slack Agent APIs for status, streaming, and context (default false)
 	ReactionLevel  string              `json:"reaction_level,omitempty"`  // "off" (default), "minimal", "full"
 	BlockReply     *bool               `json:"block_reply,omitempty"`     // override gateway block_reply (nil = inherit)
 	ChatBehavior   *ChatBehaviorConfig `json:"chat_behavior,omitempty"`   // override gateway chat behavior (nil = inherit)
@@ -255,6 +256,9 @@ type FeishuConfig struct {
 type ProvidersConfig struct {
 	Anthropic      ProviderConfig  `json:"anthropic"`
 	OpenAI         ProviderConfig  `json:"openai"`
+	AtlasCloud     ProviderConfig  `json:"atlascloud"` // Atlas Cloud (OpenAI-compatible endpoint)
+	APIRoute       ProviderConfig  `json:"api_route"`  // API Route (OpenAI-compatible endpoint)
+	Requesty       ProviderConfig  `json:"requesty"`   // Requesty (OpenAI-compatible router)
 	OpenRouter     ProviderConfig  `json:"openrouter"`
 	Groq           ProviderConfig  `json:"groq"`
 	Gemini         ProviderConfig  `json:"gemini"`
@@ -331,6 +335,12 @@ func (p *ProvidersConfig) APIBaseForType(providerType string) string {
 		return p.Anthropic.APIBase
 	case "openai", "openai_compat":
 		return p.OpenAI.APIBase
+	case "atlascloud":
+		return p.AtlasCloud.APIBase
+	case "api_route":
+		return p.APIRoute.APIBase
+	case "requesty":
+		return p.Requesty.APIBase
 	case "openrouter":
 		return p.OpenRouter.APIBase
 	case "groq":
@@ -378,6 +388,9 @@ func (c *Config) HasAnyProvider() bool {
 	p := c.Providers
 	return p.Anthropic.APIKey != "" ||
 		p.OpenAI.APIKey != "" ||
+		p.AtlasCloud.APIKey != "" ||
+		p.APIRoute.APIKey != "" ||
+		p.Requesty.APIKey != "" ||
 		p.OpenRouter.APIKey != "" ||
 		p.Groq.APIKey != "" ||
 		p.Gemini.APIKey != "" ||
@@ -537,6 +550,7 @@ type WebFetchPolicyConfig struct {
 // BrowserToolConfig controls the browser automation tool.
 type BrowserToolConfig struct {
 	Enabled           bool   `json:"enabled"`                     // enable the browser tool (default false)
+	Backend           string `json:"backend,omitempty"`           // "chrome" (default) or "lightpanda"; auto-detected from /json/version if empty
 	Headless          bool   `json:"headless,omitempty"`          // run Chrome in headless mode (ignored when RemoteURL is set)
 	RemoteURL         string `json:"remote_url,omitempty"`        // CDP endpoint for remote Chrome sidecar, e.g. "ws://chrome:9222"
 	ActionTimeoutMs   int    `json:"action_timeout_ms,omitempty"` // per-action timeout in ms (default 30000)

@@ -20,6 +20,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
@@ -106,6 +107,7 @@ type ToolPreviewLister interface {
 type SkillPreviewBuilder interface {
 	BuildPinnedSummary(ctx context.Context, names []string) string
 	BuildSummary(ctx context.Context, allowList []string) string
+	FilterSkills(ctx context.Context, allowList []string) []skills.Info
 }
 
 // SetPreviewDeps attaches optional dependencies for system prompt preview.
@@ -245,6 +247,17 @@ func (h *AgentsHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"agents": publicAgents})
 }
 
+// shouldSummonOnCreate reports whether creating an agent kicks off background
+// LLM summoning, which generates its context files from the description.
+//
+// requested is the client's "summon" field (absent means true). Clients that
+// manage agents as code pass false: they bring their own context files and
+// write them immediately after create, while summoning lands ~10-20s later and
+// overwrites them.
+func shouldSummonOnCreate(requested bool, agentType, description string, haveSummoner bool) bool {
+	return requested && agentType == store.AgentTypePredefined && description != "" && haveSummoner
+}
+
 func (h *AgentsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	userID := store.UserIDFromContext(r.Context())
 	locale := store.LocaleFromContext(r.Context())
@@ -256,6 +269,15 @@ func (h *AgentsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	var createReq struct {
 		store.AgentData
 		GrantGatewayOperatorAccess bool `json:"grant_gateway_operator_access,omitempty"`
+		// Summon opts out of the background LLM summoning that normally runs
+		// for a predefined agent with a description. Default (absent) is true,
+		// so existing clients are unaffected.
+		//
+		// Clients that manage agents as code bring their own context files and
+		// write them right after create. Summoning finishes ~10-20s later and
+		// overwrites whatever is there, silently, so those clients either lose
+		// their files or have to poll the agent status before writing.
+		Summon *bool `json:"summon,omitempty"`
 	}
 	if !bindJSON(w, r, locale, &createReq) {
 		return
@@ -308,9 +330,14 @@ func (h *AgentsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Check if predefined agent has a description for LLM summoning
 	description := req.AgentDescription
-	if req.AgentType == store.AgentTypePredefined && description != "" && h.summoner != nil {
+	summonWanted := createReq.Summon == nil || *createReq.Summon
+	switch {
+	case shouldSummonOnCreate(summonWanted, req.AgentType, description, h.summoner != nil):
 		req.Status = store.AgentStatusSummoning
-	} else if req.Status == "" {
+	case req.Status == "" || req.Status == store.AgentStatusSummoning:
+		// Never leave an agent in "summoning" when nothing will summon it:
+		// that status is only cleared by the summoner, so without one the
+		// agent would stay stuck there forever.
 		req.Status = store.AgentStatusActive
 	}
 

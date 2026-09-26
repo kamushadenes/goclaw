@@ -44,11 +44,20 @@ Pre-installed runtimes depend on the Docker image variant you deploy. The Packag
 
 | Variant | Published tag | Build args | Pre-installed runtimes |
 |---------|---------------|------------|------------------------|
-| Latest | `latest` | `ENABLE_PYTHON=true`, `ENABLE_NODE=false`, `ENABLE_FULL_SKILLS=false` | `python3`, `py3-pip`, shared Python deps |
-| Base | `base` | `ENABLE_PYTHON=false`, `ENABLE_NODE=false`, `ENABLE_FULL_SKILLS=false` | No Python or Node.js runtimes |
-| Full | `full` | `ENABLE_FULL_SKILLS=true` | `python3`, `py3-pip`, `nodejs`, `npm`, `pandoc`, `github-cli`, bundled skill deps, Workspace CLI |
+| Latest | `latest` | `ENABLE_PYTHON=true`, `ENABLE_NODE=false`, `ENABLE_FULL_SKILLS=false`, `ENABLE_MEDIA_PROBES=true` | `python3`, `py3-pip`, shared Python deps, `ffprobe`, `pdfinfo` |
+| Base | `base` | `ENABLE_PYTHON=false`, `ENABLE_NODE=false`, `ENABLE_FULL_SKILLS=false`, `ENABLE_MEDIA_PROBES=false` | No Python, Node.js, `ffprobe`, or `pdfinfo` |
+| Full | `full` | `ENABLE_FULL_SKILLS=true`, `ENABLE_MEDIA_PROBES=true` | `python3`, `py3-pip`, `nodejs`, `npm`, `pandoc`, `github-cli`, `poppler-utils`, bundled skill deps, Workspace CLI, `ffprobe`, `pdfinfo` |
 | Custom Python | not published | `ENABLE_PYTHON=true` | `python3`, `py3-pip`, shared Python deps |
 | Custom Node | not published | `ENABLE_NODE=true` | `nodejs`, `npm` |
+
+`ENABLE_MEDIA_PROBES` (default `true`) installs `ffmpeg` for its `ffprobe` binary and
+`poppler-utils` for its `pdfinfo` binary. The media budget guard charges a measured duration or
+page count, never a number derived from a payload's byte size. Without these binaries, which is
+the case for the `base` variant, the desktop build, and bare-binary deployments:
+
+- `read_video` and `read_audio` refuse the call and name the missing `ffprobe` in the error.
+- `read_document` charges every PDF the provider's 1000-page ceiling (258,000 tokens), so it
+  still works wherever the agent's context window can hold that.
 
 ### Full Variant Extras
 
@@ -166,13 +175,20 @@ Uploaded files (from web chat, Telegram, Discord, etc.) are persisted to:
 
 Uploads without a usable original filename fall back to `{uuid}.{ext}`. Legacy media refs may still resolve from `.media/{sessionHash}/{uuid}.{ext}`.
 
-The `enrichDocumentPaths()` function injects the full path into `<media:document>` tags:
+The `enrichDocumentPaths()` function injects the exact media ID and a logical
+path relative to the active agent workspace into `<media:document>` tags:
 
 ```
-<media:document name="report.pdf" path="/app/workspace/.uploads/report-a1b2c3d4.pdf">
+<media:document name="report.pdf" id="..." path=".uploads/report-a1b2c3d4.pdf">
 ```
 
-Agents can read these files directly via exec — no copy to `/tmp` needed. For archive uploads such as `.zip`, inspect or extract with commands like `unzip -l "<path>"` or `unzip -q "<path>" -d <output-dir>`.
+Normal agent runs can read these workspace files directly via `exec` — no copy
+to `/tmp` is needed. Agent Link delegations instead receive selected files as
+read-only `inputs/...` paths in an isolated delegation exchange. Their `exec`
+calls fail closed unless an active sandbox is available, and generated files
+must be written under `outputs/` for validation and publication back to the
+caller. For archive uploads such as `.zip`, inspect or extract them within the
+authorized workspace or delegation paths.
 
 ---
 

@@ -51,6 +51,15 @@ func (s *ToolStage) Execute(ctx context.Context, state *RunState) error {
 		return fmt.Errorf("ExecuteToolCall callback not configured")
 	}
 
+	// Surface this iteration's resolved tool allowlist to the tools themselves,
+	// so a tool can introspect whether a sibling tool is available to the
+	// calling agent (e.g. use_skill inlining skill content when read_file
+	// isn't granted). Covers both the sequential and parallel dispatch paths
+	// below since both derive their ctx from this one.
+	if state.Tool.AllowedTools != nil {
+		ctx = store.WithAvailableToolNames(ctx, state.Tool.AllowedTools)
+	}
+
 	// Parallel path: separate I/O (parallel) from state mutation (sequential).
 	// Requires both ExecuteToolRaw and ProcessToolResult callbacks.
 	if len(toolCalls) > 1 && s.canExecuteParallel(toolCalls) && !s.batchExceedsBudget(state, toolCalls) {
@@ -167,6 +176,7 @@ func (s *ToolStage) preflightToolCall(ctx context.Context, state *RunState, tc p
 				Role:       "tool",
 				Content:    reason,
 				ToolCallID: tc.ID,
+				ToolName:   tc.Name,
 				IsError:    true,
 			}
 		}
@@ -191,6 +201,7 @@ func (s *ToolStage) preflightToolCall(ctx context.Context, state *RunState, tc p
 			Role:       "tool",
 			Content:    "Hook blocked: pre_tool_use",
 			ToolCallID: tc.ID,
+			ToolName:   tc.Name,
 		}
 	}
 	if r.UpdatedToolInput != nil {

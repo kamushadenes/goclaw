@@ -451,9 +451,9 @@
       "label": "Group Allowed Users",
       "help": "Separate allowlist for group senders"
     },
-    "native_stream": {
-      "label": "Native Streaming (Agents & AI Apps)",
-      "help": "Use Slack's ChatStreamer API for native streaming. Falls back to edit-in-place if unavailable."
+    "agent_mode": {
+      "label": "Slack Agent API",
+      "help": "Use native status, streaming, and app context APIs. Requires Slack Agents & AI Apps plus Agent event subscriptions."
     },
     "debounce_delay": {
       "label": "Debounce Delay (ms)",

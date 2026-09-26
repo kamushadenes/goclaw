@@ -98,10 +98,14 @@ func runDoctor() {
 		checkDBProviders(db)
 		checkProvider("Anthropic (env)", cfg.Providers.Anthropic.APIKey)
 		checkProvider("OpenAI (env)", cfg.Providers.OpenAI.APIKey)
+		checkProvider("API Route (env)", cfg.Providers.APIRoute.APIKey)
+		checkProvider("Requesty (env)", cfg.Providers.Requesty.APIKey)
 		checkProvider("OpenRouter (env)", cfg.Providers.OpenRouter.APIKey)
 	} else {
 		checkProvider("Anthropic", cfg.Providers.Anthropic.APIKey)
 		checkProvider("OpenAI", cfg.Providers.OpenAI.APIKey)
+		checkProvider("API Route", cfg.Providers.APIRoute.APIKey)
+		checkProvider("Requesty", cfg.Providers.Requesty.APIKey)
 		checkProvider("OpenRouter", cfg.Providers.OpenRouter.APIKey)
 		checkProvider("Gemini", cfg.Providers.Gemini.APIKey)
 		checkProvider("Groq", cfg.Providers.Groq.APIKey)
@@ -187,6 +191,10 @@ func checkDBChannels(db *sql.DB) {
 		label := fmt.Sprintf("%s/%s", channelType, name)
 		fmt.Printf("    %-24s %s\n", label+":", status)
 	}
+	if err := rows.Err(); err != nil {
+		fmt.Printf("    (could not read channels: %s)\n", err)
+		return
+	}
 	if !found {
 		fmt.Println("    (none configured in database)")
 	}
@@ -217,6 +225,10 @@ func checkDBProviders(db *sql.DB) {
 			status += " (no API key)"
 		}
 		fmt.Printf("    %-16s %s\n", displayName+":", status)
+	}
+	if err := rows.Err(); err != nil {
+		fmt.Printf("    (could not read providers: %s)\n", err)
+		return
 	}
 	if !found {
 		fmt.Println("    (none configured in database)")

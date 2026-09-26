@@ -156,7 +156,7 @@
     },
     "searchChain": {
       "title": "Web Search Provider Chain",
-      "description": "Drag to reorder search providers. First enabled provider with a valid API key is tried first.",
+      "description": "Drag to reorder search providers. The first enabled and available provider is tried first.",
       "maxResults": "Max results",
       "locked": "Always-on fallback",
       "cancel": "Cancel",
@@ -166,6 +166,7 @@
         "exa": "Exa",
         "tavily": "Tavily",
         "brave": "Brave Search",
+        "parallel": "Parallel",
         "duckduckgo": "DuckDuckGo"
       },
       "apiKey": "API Key",
@@ -245,7 +246,9 @@
       "save": "Save",
       "saving": "Saving...",
       "imageModelLabel": "Image model",
-      "imageModelDefaultOption": "Default · gpt-image-2 (recommended)",
+      "imageModelFlareOption": "Default · gpt-image-2.5-flare (recommended)",
+      "imageModelSunburstOption": "Precise · gpt-image-2.5-sunburst",
+      "imageModelPreviousOption": "Previous · gpt-image-2",
       "imageModelLegacyOption": "Legacy · gpt-image-1.5"
     },
     "toast": {

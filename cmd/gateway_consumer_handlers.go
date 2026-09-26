@@ -79,6 +79,7 @@ func handleSubagentAnnounce(
 	if sid := msg.Metadata[tools.MetaOriginRootSpanID]; sid != "" {
 		parentRootSpanID, _ = uuid.Parse(sid)
 	}
+	rootAgentID, _ := uuid.Parse(msg.Metadata[tools.MetaSubagentRootAgentID])
 
 	// Group-scoped UserID for subagent announce (same logic as main lane).
 	announceUserID := msg.UserID
@@ -116,9 +117,7 @@ func handleSubagentAnnounce(
 	originSenderID := msg.Metadata[tools.MetaOriginSenderID]
 	originRole := msg.Metadata[tools.MetaOriginRole]
 
-	queueKey := fmt.Sprintf("%s:%s", msg.TenantID, sessionKey)
 	routing := subagentAnnounceRouting{
-		QueueKey:         queueKey,
 		SessionKey:       sessionKey,
 		TenantID:         msg.TenantID,
 		OrigChannel:      origChannel,
@@ -130,10 +129,16 @@ func handleSubagentAnnounce(
 		SenderID:         originSenderID,
 		Role:             originRole,
 		ParentAgent:      parentAgent,
+		RootAgentID:      rootAgentID,
 		ParentTraceID:    parentTraceID,
 		ParentRootSpanID: parentRootSpanID,
 		OutMeta:          buildAnnounceOutMeta(origLocalKey),
 	}
+	// Batch only announces with identical routing and authority. A session can
+	// be shared by multiple group senders or local topic keys; using only
+	// tenant+session would let the first item's sender/role govern the rest.
+	queueKey := subagentAnnounceRoutingKey(routing)
+	routing.QueueKey = queueKey
 
 	// Enqueue into producer-consumer queue using tenant-scoped key from routing.
 	isProcessor := enqueueSubagentAnnounce(queueKey, entry)
@@ -142,13 +147,31 @@ func handleSubagentAnnounce(
 			defer safego.Recover(nil, "component", "subagent_announce_loop", "session", sessionKey)
 
 			// Fetch live roster for merged announce context.
-			roster := deps.SubagentMgr.RosterForParent(parentAgent)
+			roster := deps.SubagentMgr.RosterForParent(tools.TaskScope{
+				TenantID: msg.TenantID, RootAgentID: rootAgentID, RootAgentKey: parentAgent,
+			})
 
 			processSubagentAnnounceLoop(ctx, routing, roster, deps.SubagentMgr, deps.Sched, deps.MsgBus, deps.Cfg, deps.ChannelMgr)
 		})
 	}
 
 	return true
+}
+
+func subagentAnnounceRoutingKey(r subagentAnnounceRouting) string {
+	return strings.Join([]string{
+		r.TenantID.String(),
+		r.RootAgentID.String(),
+		r.ParentAgent,
+		r.SessionKey,
+		r.OrigChannel,
+		r.OrigChatID,
+		r.OrigPeerKind,
+		r.OrigLocalKey,
+		r.UserID,
+		r.SenderID,
+		r.Role,
+	}, "\x00")
 }
 
 // handleTeammateMessage processes teammate messages: bypass debounce, route to target
@@ -253,7 +276,17 @@ func handleTeammateMessage(
 		SenderID:        teammateSenderID, // real user who triggered the teammate dispatch (#915)
 		Role:            teammateRole,     // RBAC role for admin bypass during teammate turn (#915)
 		RunID:           fmt.Sprintf("teammate-%s-%s", msg.Metadata[tools.MetaFromAgent], msg.Metadata[tools.MetaToAgent]),
-		Stream:          false,
+		// Streamed for connection liveness, not for delivery. A teammate run is
+		// never registered with the channel manager, so HandleAgentEvent drops its
+		// chunks on the first line and nothing is delivered incrementally; the task
+		// result still comes from the final RunResult. What streaming buys is the
+		// response headers arriving immediately: a non-streamed request to a slow
+		// reasoning model holds a silent connection for the whole generation, and
+		// ResponseHeaderTimeout kills it — observed as
+		// `http2: timeout awaiting response headers` on a member asked to produce a
+		// large file, while the same model over the same provider was fine on a
+		// streamed channel run.
+		Stream:          true,
 		TeamTaskID:      msg.Metadata[tools.MetaTeamTaskID],
 		TeamWorkspace:   msg.Metadata[tools.MetaTeamWorkspace],
 		LeaderAgentID:   msg.Metadata[tools.MetaLeaderAgentID],
@@ -560,11 +593,14 @@ func buildTeammateAnnounce(ctx context.Context, outcome scheduler.RunOutcome, se
 	} else if outcome.Result == nil {
 		slog.Warn("teammate message: nil result without error", "from", senderID)
 		return "", nil, false
-	} else if (outcome.Result.Content == "" && len(outcome.Result.Media) == 0) || agent.IsSilentReply(outcome.Result.Content) {
+	} else if normalized, shouldDeliver := normalizeAgentOutboundContent(
+		outcome.Result.Content,
+		len(outcome.Result.Media),
+	); !shouldDeliver {
 		slog.Info("teammate message: suppressed silent/empty reply", "from", senderID)
 		return "", nil, false
 	} else {
-		content = outcome.Result.Content
+		content = normalized
 		media = outcome.Result.Media
 	}
 

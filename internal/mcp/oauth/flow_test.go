@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -75,6 +76,52 @@ func TestStartFlowReturnsPKCEAuthURL(t *testing.T) {
 	}
 	if !strings.Contains(authURL, "client_id=test-client") {
 		t.Errorf("authURL missing client_id: %s", authURL)
+	}
+}
+
+func TestStartFlowIncludesExtraAuthParams(t *testing.T) {
+	fm := NewFlowManager(http.DefaultClient)
+	disc := &DiscoveryResult{
+		AuthorizationEndpoint: "https://auth.example.com/authorize",
+		TokenEndpoint:         "https://auth.example.com/token",
+	}
+	authURL, _, err := fm.StartFlow(context.Background(), StartFlowParams{
+		ServerID:        uuid.New(),
+		TenantID:        uuid.New(),
+		DiscoveryResult: disc,
+		ClientID:        "test-client",
+		RedirectURI:     "https://goclaw.example.com/v1/mcp/oauth/callback",
+		GrantType:       "pkce",
+		ExtraAuthParams: url.Values{"token_access_type": {"offline"}},
+	})
+	if err != nil {
+		t.Fatalf("StartFlow() error: %v", err)
+	}
+	if !strings.Contains(authURL, "token_access_type=offline") {
+		t.Errorf("authURL missing token_access_type=offline: %s", authURL)
+	}
+}
+
+func TestStartFlowDoesNotOverrideStandardParams(t *testing.T) {
+	fm := NewFlowManager(http.DefaultClient)
+	disc := &DiscoveryResult{
+		AuthorizationEndpoint: "https://auth.example.com/authorize",
+		TokenEndpoint:         "https://auth.example.com/token",
+	}
+	authURL, _, err := fm.StartFlow(context.Background(), StartFlowParams{
+		ServerID:        uuid.New(),
+		TenantID:        uuid.New(),
+		DiscoveryResult: disc,
+		ClientID:        "test-client",
+		RedirectURI:     "https://goclaw.example.com/v1/mcp/oauth/callback",
+		GrantType:       "pkce",
+		ExtraAuthParams: url.Values{"client_id": {"evil"}},
+	})
+	if err != nil {
+		t.Fatalf("StartFlow() error: %v", err)
+	}
+	if strings.Contains(authURL, "client_id=evil") {
+		t.Errorf("ExtraAuthParams must not override standard client_id: %s", authURL)
 	}
 }
 

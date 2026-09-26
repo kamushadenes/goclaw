@@ -156,7 +156,7 @@
     },
     "searchChain": {
       "title": "Chuỗi nhà cung cấp tìm kiếm web",
-      "description": "Kéo để sắp xếp lại nhà cung cấp tìm kiếm. Nhà cung cấp đầu tiên được bật với API key hợp lệ sẽ được thử trước.",
+      "description": "Kéo để sắp xếp lại nhà cung cấp tìm kiếm. Nhà cung cấp đầu tiên được bật và khả dụng sẽ được thử trước.",
       "maxResults": "Số kết quả tối đa",
       "locked": "Dự phòng luôn bật",
       "cancel": "Hủy",
@@ -166,6 +166,7 @@
         "exa": "Exa",
         "tavily": "Tavily",
         "brave": "Brave Search",
+        "parallel": "Parallel",
         "duckduckgo": "DuckDuckGo"
       },
       "apiKey": "API Key",
@@ -245,7 +246,9 @@
       "save": "Lưu",
       "saving": "Đang lưu...",
       "imageModelLabel": "Mô hình ảnh",
-      "imageModelDefaultOption": "Mặc định · gpt-image-2 (khuyến nghị)",
+      "imageModelFlareOption": "Mặc định · gpt-image-2.5-flare (khuyến nghị)",
+      "imageModelSunburstOption": "Chính xác · gpt-image-2.5-sunburst",
+      "imageModelPreviousOption": "Đời trước · gpt-image-2",
       "imageModelLegacyOption": "Cũ · gpt-image-1.5"
     },
     "toast": {

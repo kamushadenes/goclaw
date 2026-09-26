@@ -223,13 +223,17 @@ When `GOCLAW_*_API_KEY` environment variables are set, the gateway auto-onboards
 > | Image | Description |
 > |-------|-------------|
 > | `latest` | Backend + embedded web UI + Python (**recommended**) |
-> | `latest-base` | Backend API-only, no web UI, no runtimes |
+> | `latest-base` | Backend API-only, no web UI, no runtimes, no media probes (`read_video` and `read_audio` refuse without `ffprobe`; `read_document` falls back to the 1000-page ceiling without `pdfinfo`) |
 > | `latest-full` | All runtimes + skill dependencies pre-installed |
 > | `latest-otel` | Latest + OpenTelemetry tracing |
 > | `goclaw-web` | Standalone nginx + React SPA (for custom reverse proxy) |
 >
 > For custom builds (Tailscale, Redis): `docker build --build-arg ENABLE_TSNET=true ...`
 > See the [Deployment Guide](https://docs.goclaw.sh/#deploy-docker-compose) for details.
+
+## Easypanel
+
+[Easypanel](https://easypanel.io) is a self-hosted Docker deployment platform, and GoClaw has a one-click deployment template there: https://easypanel.io/templates/goclaw. It deploys the full stack (Postgres with pgvector, the GoClaw backend, headless Chrome for browser automation, and the web UI) - you'll still need to set your `GOCLAW_*_API_KEY` after deploying.
 
 ## Updating
 
@@ -252,7 +256,11 @@ Open **About** dialog → click **Update Now** (admin only). The update includes
   <img src="_statics/Agent Orchestration.jpg" alt="Agent Orchestration" width="800" />
 </p>
 
-Each agent runs with its own identity, tools, LLM provider, and context files. Three delegation modes — sync (wait), async (fire-and-forget), bidirectional — connected through explicit permission links with concurrency limits.
+Each agent runs with its own identity, tools, LLM provider, and context files.
+Agent Links define outbound, inbound, or bidirectional permission edges.
+Delegation can run synchronously or asynchronously and exchanges files through
+an isolated delegation workspace; validated outputs are published back under
+the caller's `.delegations/<delegation-id>/` directory.
 
 > Details: [Agent Teams docs](https://docs.goclaw.sh/#teams-what-are-teams)
 
@@ -366,10 +374,10 @@ GoClaw was originally inspired by the [OpenClaw](https://github.com/openclaw/ope
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=nextlevelbuilder%2Fgoclaw&type=date&legend=top-left">
+<a href="https://star-history.dera.page/#nextlevelbuilder/goclaw&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/image?repos=nextlevelbuilder/goclaw&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/image?repos=nextlevelbuilder/goclaw&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/image?repos=nextlevelbuilder/goclaw&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=nextlevelbuilder/goclaw&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=nextlevelbuilder/goclaw&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=nextlevelbuilder/goclaw&type=date&legend=top-left" />
  </picture>
 </a>

@@ -36,6 +36,9 @@ const (
 	ProviderBytePlusCoding  = "byteplus_coding" // BytePlus ModelArk Coding Plan
 	ProviderVertex          = "vertex"          // Google Cloud Vertex AI (OAuth2 service account + ADC)
 	ProviderKimiCoding      = "kimi_coding"     // Moonshot Kimi Coding (OpenAI-compat, requires fixed User-Agent)
+	ProviderAtlasCloud      = "atlascloud"      // Atlas Cloud (OpenAI-compatible endpoint)
+	ProviderAPIRoute        = "api_route"       // API Route (OpenAI-compatible endpoint)
+	ProviderRequesty        = "requesty"        // Requesty (OpenAI-compatible router)
 
 	// MiniMax defaults.
 	MiniMaxDefaultAPIBase = "https://api.minimax.io/v1"
@@ -61,6 +64,19 @@ const (
 	KimiCodingDefaultAPIBase    = "https://api.kimi.com/coding/v1"
 	KimiCodingDefaultModel      = "kimi-k2-turbo-preview"
 	KimiCodingRequiredUserAgent = "claude-code/0.1.0"
+
+	// Atlas Cloud defaults.
+	AtlasCloudDefaultAPIBase = "https://api.atlascloud.ai/v1"
+	AtlasCloudDefaultModel   = "qwen/qwen3.5-flash"
+
+	// API Route defaults.
+	APIRouteDefaultAPIBase = "https://global.api-route.com/v1"
+	APIRouteDefaultModel   = "gpt-5.4-mini"
+
+	// Requesty defaults. Regional endpoints (e.g. https://router.eu.requesty.ai/v1)
+	// can be set through api_base.
+	RequestyDefaultAPIBase = "https://router.requesty.ai/v1"
+	RequestyDefaultModel   = "openai/gpt-4o-mini"
 )
 
 // Vertex AI constants live in internal/providers/vertex.go to avoid a store→providers import cycle
@@ -96,6 +112,9 @@ var ValidProviderTypes = map[string]bool{
 	ProviderBytePlusCoding:  true,
 	ProviderVertex:          true,
 	ProviderKimiCoding:      true,
+	ProviderAtlasCloud:      true,
+	ProviderAPIRoute:        true,
+	ProviderRequesty:        true,
 }
 
 // VertexProviderSettings holds Vertex-specific config stored in llm_providers.settings JSONB.

@@ -13,12 +13,14 @@ export const DEFAULT_CODEX_OAUTH_ALIAS = "openai-codex";
 
 export const PROVIDER_TYPES: ProviderTypeInfo[] = [
   { value: "aimlapi", label: "AI/ML API", apiBase: "https://api.aimlapi.com/v1", placeholder: "" },
+  { value: "api_route", label: "API Route", apiBase: "https://global.api-route.com/v1", placeholder: "" },
   { value: "chatgpt_oauth", label: "ChatGPT Subscription (OAuth)", apiBase: "", placeholder: "" },
   { value: "anthropic_native", label: "Anthropic (Native)", apiBase: "", placeholder: "https://api.anthropic.com" },
   { value: "openai_compat", label: "OpenAI Compatible", apiBase: "", placeholder: "https://api.openai.com/v1" },
   { value: "gemini_native", label: "Google Gemini", apiBase: "https://generativelanguage.googleapis.com/v1beta/openai", placeholder: "" },
   { value: "vertex", label: "Google Vertex AI", apiBase: "", placeholder: "Auto-computed from project_id + region (settings)" },
   { value: "openrouter", label: "OpenRouter", apiBase: "https://openrouter.ai/api/v1", placeholder: "" },
+  { value: "requesty", label: "Requesty", apiBase: "https://router.requesty.ai/v1", placeholder: "" },
   { value: "groq", label: "Groq", apiBase: "https://api.groq.com/openai/v1", placeholder: "" },
   { value: "deepseek", label: "DeepSeek", apiBase: "https://api.deepseek.com/v1", placeholder: "" },
   { value: "mistral", label: "Mistral AI", apiBase: "https://api.mistral.ai/v1", placeholder: "" },

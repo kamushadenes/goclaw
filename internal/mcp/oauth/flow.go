@@ -40,7 +40,7 @@ type PendingFlow struct {
 	UserID           string // empty = global/tenant-level, non-empty = per-user
 	InitiatingUserID string // admin who called /start — used for WS event routing
 	CodeVerifier     string
-	UsePKCE          bool   // true → send code_verifier on token exchange
+	UsePKCE          bool // true → send code_verifier on token exchange
 	RedirectURI      string
 	TokenEndpoint    string
 	ClientID         string
@@ -66,6 +66,13 @@ type StartFlowParams struct {
 	// "authorization_code"   — Authorization Code + PKCE S256, confidential client (sends ClientSecret).
 	// "client_credentials"   — not handled by StartFlow; use ClientCredentials() instead.
 	GrantType string
+
+	// ExtraAuthParams carries provider-specific authorization-request parameters
+	// that goclaw's generic flow does not otherwise set (e.g. Dropbox's
+	// token_access_type=offline, which the AS requires to issue a refresh token;
+	// without it Dropbox returns an online-only token that cannot be refreshed).
+	// Standard OAuth keys already set by StartFlow are never overridden.
+	ExtraAuthParams url.Values
 }
 
 // FlowManager manages in-progress OAuth authorization code flows.
@@ -143,6 +150,14 @@ func (fm *FlowManager) StartFlow(ctx context.Context, p StartFlowParams) (authUR
 	}
 	if p.DiscoveryResult.ResourceURI != "" {
 		q.Set("resource", p.DiscoveryResult.ResourceURI) // RFC 8707
+	}
+	for k, vs := range p.ExtraAuthParams {
+		if q.Has(k) {
+			continue // standard OAuth params win — never overridden
+		}
+		for _, v := range vs {
+			q.Add(k, v)
+		}
 	}
 
 	authURL = p.DiscoveryResult.AuthorizationEndpoint + "?" + q.Encode()

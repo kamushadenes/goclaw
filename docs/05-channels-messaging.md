@@ -13,7 +13,7 @@ flowchart LR
         DC["Discord"]
         SL["Slack"]
         FS["Feishu/Lark"]
-        ZL["Zalo OA"]
+        ZL["Zalo Bot"]
         ZLP["Zalo Personal"]
         WA["WhatsApp"]
     end
@@ -169,8 +169,8 @@ Every channel must implement the base interface:
 | `WebhookChannel` | Webhook HTTP handler mounting | Facebook, Feishu/Lark, Pancake |
 | `ReactionChannel` | Status reactions on messages | Telegram, Slack, Feishu |
 | `ActivityIndicatorChannel` | Ephemeral "agent is working" indicator | Bitrix24 |
-| `BlockReplyChannel` | Override gateway block_reply setting | Discord, Feishu/Lark, Pancake, Slack, Zalo OA, Zalo Personal |
-| `ChatBehaviorChannel` | Override gateway chat_behavior setting | Bitrix24, Discord, Feishu/Lark, Pancake, Slack, Telegram, WhatsApp, Zalo OA, Zalo Personal |
+| `BlockReplyChannel` | Override gateway block_reply setting | Discord, Feishu/Lark, Pancake, Slack, Zalo Bot, Zalo Personal |
+| `ChatBehaviorChannel` | Override gateway chat_behavior setting | Bitrix24, Discord, Feishu/Lark, Pancake, Slack, Telegram, WhatsApp, Zalo Bot, Zalo Personal |
 | `ReasoningDeliveryChannel` | Override channel-visible reasoning delivery | Telegram |
 
 `BaseChannel` provides a shared implementation that all channels embed: allowlist matching, `HandleMessage()`, `CheckPolicy()`, and user ID extraction.
@@ -257,14 +257,14 @@ flowchart TD
 
 ## 4. Channel Comparison
 
-| Feature | Telegram | Feishu/Lark | Discord | Slack | WhatsApp | Zalo OA | Zalo Personal | Bitrix24 |
+| Feature | Telegram | Feishu/Lark | Discord | Slack | WhatsApp | Zalo Bot | Zalo Personal | Bitrix24 |
 |---------|----------|-------------|---------|-------|----------|---------|---------------|----------|
 | Connection | Long polling | WS (default) / Webhook | Gateway events | Socket Mode | Direct protocol (in-process) | Long polling | Internal protocol | Long polling (REST) |
 | DM support | Yes | Yes | Yes | Yes | Yes | Yes (DM only) | Yes | Yes |
 | Group support | Yes (mention gating) | Yes | Yes | Yes (mention gating + thread cache) | Yes | No | Yes | Yes |
 | Forum/Topics | Yes (per-topic config) | Yes (topic session mode) | -- | -- | -- | -- | -- | -- |
 | Message limit | 4,096 chars | Configurable (default 4,000) | 2,000 chars | 4,000 chars | WhatsApp native limit | 2,000 chars | 2,000 chars | 4,096 chars |
-| Streaming | Typing indicator | Streaming message cards | Edit "Thinking..." | Edit "Thinking..." (throttled 1s) | No | No | No | No |
+| Streaming | Typing indicator | Streaming message cards | Edit "Thinking..." | Native Agent stream / edit fallback | No | No | No | No |
 | Media | Photos, voice, files | Images, files (30 MB) | Files, embeds | Files (download w/ SSRF protection) | Images, audio, video, documents | Images (5 MB) | -- | Files (20 MB default) |
 | Speech-to-text | Yes (STT proxy) | -- | -- | -- | -- | -- | -- | -- |
 | Voice routing | Yes (VoiceAgentID) | -- | -- | -- | -- | -- | -- | -- |
@@ -612,13 +612,15 @@ The Slack channel uses the `slack-go/slack` library to connect via Socket Mode (
 - **Three token types**: `xoxb-` (Bot Token, required), `xapp-` (App-Level Token, required), `xoxp-` (User Token, optional for custom identity)
 - **Token prefix validation**: Tokens validated at startup (`xoxb-`, `xapp-`, `xoxp-` prefixes)
 - **Message limit**: 4,000-character limit with automatic splitting at newline boundaries
-- **Placeholder editing**: Sends "Thinking..." → edits with actual response (same as Discord)
+- **Backward-compatible delivery**: With `agent_mode: false` (default), sends "Thinking..." and edits it with the final response
+- **Slack Agent API**: With `agent_mode: true`, uses `assistant.threads.setStatus` plus `chat.startStream`, `chat.appendStream`, and `chat.stopStream`
+- **Agent context tracking**: Handles `assistant_thread_started` / `assistant_thread_context_changed` for `assistant_view`, and `app_home_opened` / `app_context_changed` for `agent_view`
 - **Mention gating**: `requireMention` default true; `<@botUserID>` stripped from content
 - **Thread participation cache**: After bot replies in a thread, subsequent messages in that thread auto-trigger response without @mention (24h TTL)
 - **Message dedup**: `channel+ts` key prevents duplicate processing on Socket Mode reconnect
 - **Message debounce**: Per-thread batching of rapid messages (300ms default, configurable; `debounce_delay: 0` disables)
 - **Dead socket classification**: Non-retryable auth errors (invalid_auth, token_revoked) fail fast instead of infinite reconnect
-- **Streaming**: Edit-in-place via `chat.update` with 1000ms throttle (Slack Tier 3 rate limit)
+- **Streaming**: Legacy mode edits in place via `chat.update`; Agent mode appends native Markdown stream chunks and flushes the final chunk through `chat.stopStream`
 - **Reactions**: Status emoji on user messages (thinking_face, hammer_and_wrench, white_check_mark, x, hourglass_flowing_sand)
 - **SSRF protection**: File download hostname allowlist (*.slack.com, *.slack-edge.com, *.slack-files.com), auth token stripped on redirect
 - **Health probe**: `auth.test()` with 2.5s timeout for monitoring integration
@@ -643,6 +645,33 @@ GOCLAW_SLACK_USER_TOKEN  → channels.slack.user_token (optional)
 
 Auto-enables when both bot_token and app_token are set.
 
+### Agent API Setup
+
+Agent mode is opt-in and defaults to disabled:
+
+```json5
+{
+  channels: {
+    slack: {
+      agent_mode: true
+    }
+  }
+}
+```
+
+Enable **Agents & AI Apps** in the Slack app settings and retain the `chat:write`
+bot scope. Event subscriptions depend on the Slack messaging experience:
+
+- `agent_view` (new apps): `message.im`, `app_home_opened`, and `app_context_changed`
+- `assistant_view` (legacy apps): `message.im`, `assistant_thread_started`, and `assistant_thread_context_changed`
+- Channel mentions: also subscribe to `app_mention`
+
+`app_context_changed` is not yet modeled by Slack Go SDK v0.27, so the channel
+registers a compatible event shape with its Socket Mode parser and tracks the
+resulting context per Slack user. If Agent API
+delivery fails, the final response falls back to a normal Slack message; disabling
+`agent_mode` preserves the original placeholder and `chat.update` behavior.
+
 ---
 
 ## 9. WhatsApp
@@ -662,9 +691,9 @@ The WhatsApp channel connects directly to the WhatsApp network via the multi-dev
 
 ---
 
-## 10. Zalo OA
+## 10. Zalo Bot
 
-The Zalo OA (Official Account) channel connects to the Zalo OA Bot API.
+The Zalo Bot channel uses the official Zalo Bot API via long polling. It connects to a Zalo bot created with Zalo Bot Manager/Creator and does not require a Zalo Official Account.
 
 ### Key Behaviors
 
@@ -681,16 +710,16 @@ The Zalo OA (Official Account) channel connects to the Zalo OA Bot API.
 
 The Zalo Personal channel provides access to personal Zalo accounts using a reverse-engineered protocol. This is an unofficial integration.
 
-### Key Differences from Zalo OA
+### Key Differences from Zalo Bot
 
-| Aspect | Zalo OA | Zalo Personal |
+| Aspect | Zalo Bot | Zalo Personal |
 |--------|---------|---------------|
 | Protocol | Official Bot API | Reverse-engineered (zcago, MIT) |
 | DM support | Yes | Yes |
 | Group support | No | Yes |
 | Default DM policy | `pairing` | `allowlist` (restrictive) |
 | Default group policy | N/A | `allowlist` (restrictive) |
-| Authentication | API credentials | Pre-loaded credentials or QR scan |
+| Authentication | Bot credentials | Pre-loaded credentials or QR scan |
 | Risk | None | Account may be locked/banned |
 
 ### Security Warning

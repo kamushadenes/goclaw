@@ -43,6 +43,40 @@ func registerProviders(registry *providers.Registry, cfg *config.Config, modelRe
 		slog.Info("registered provider", "name", "openai")
 	}
 
+	if cfg.Providers.AtlasCloud.APIKey != "" {
+		base := cfg.Providers.AtlasCloud.APIBase
+		if base == "" {
+			base = store.AtlasCloudDefaultAPIBase
+		}
+		prov := providers.NewOpenAIProvider("atlascloud", cfg.Providers.AtlasCloud.APIKey, base, store.AtlasCloudDefaultModel)
+		prov.WithProviderType(store.ProviderAtlasCloud)
+		registry.Register(prov)
+		slog.Info("registered provider", "name", "atlascloud")
+	}
+
+	if cfg.Providers.APIRoute.APIKey != "" {
+		base := cfg.Providers.APIRoute.APIBase
+		if base == "" {
+			base = store.APIRouteDefaultAPIBase
+		}
+		prov := providers.NewOpenAIProvider("api_route", cfg.Providers.APIRoute.APIKey, base, store.APIRouteDefaultModel)
+		prov.WithProviderType(store.ProviderAPIRoute)
+		registry.Register(prov)
+		slog.Info("registered provider", "name", "api_route")
+	}
+
+	if cfg.Providers.Requesty.APIKey != "" {
+		base := cfg.Providers.Requesty.APIBase
+		if base == "" {
+			base = store.RequestyDefaultAPIBase
+		}
+		prov := providers.NewOpenAIProvider("requesty", cfg.Providers.Requesty.APIKey, base, store.RequestyDefaultModel)
+		prov.WithProviderType(store.ProviderRequesty)
+		prov.WithSiteInfo("https://goclaw.sh", "GoClaw")
+		registry.Register(prov)
+		slog.Info("registered provider", "name", "requesty")
+	}
+
 	if cfg.Providers.OpenRouter.APIKey != "" {
 		orProv := providers.NewOpenAIProvider("openrouter", cfg.Providers.OpenRouter.APIKey, "https://openrouter.ai/api/v1", "anthropic/claude-sonnet-4-5-20250929")
 		orProv.WithSiteInfo("https://goclaw.sh", "GoClaw")
@@ -440,12 +474,20 @@ func registerProvidersFromDB(registry *providers.Registry, provStore store.Provi
 			prov := providers.NewAIMLAPIProvider(p.Name, p.APIKey, p.APIBase)
 			prov.WithProviderType(p.ProviderType)
 			registry.RegisterForTenant(p.TenantID, prov)
+		case store.ProviderAPIRoute:
+			base := p.APIBase
+			if base == "" {
+				base = store.APIRouteDefaultAPIBase
+			}
+			prov := providers.NewOpenAIProvider(p.Name, p.APIKey, base, store.APIRouteDefaultModel)
+			prov.WithProviderType(p.ProviderType)
+			registry.RegisterForTenant(p.TenantID, prov)
 		default:
 			base, model := openAIProviderDefaults(p.ProviderType, p.APIBase)
 			prov := providers.NewOpenAIProvider(p.Name, p.APIKey, base, model)
 			prov.WithProviderType(p.ProviderType)
 			prov.WithThinkingEnabled(store.ParseThinkingEnabled(p.Settings))
-			if p.ProviderType == store.ProviderOpenRouter {
+			if p.ProviderType == store.ProviderOpenRouter || p.ProviderType == store.ProviderRequesty {
 				prov.WithSiteInfo("https://goclaw.sh", "GoClaw")
 			}
 			registry.RegisterForTenant(p.TenantID, prov)
@@ -461,6 +503,16 @@ func openAIProviderDefaults(providerType, apiBase string) (string, string) {
 			apiBase = store.MiniMaxDefaultAPIBase
 		}
 		return apiBase, store.MiniMaxDefaultModel
+	case store.ProviderAtlasCloud:
+		if apiBase == "" {
+			apiBase = store.AtlasCloudDefaultAPIBase
+		}
+		return apiBase, store.AtlasCloudDefaultModel
+	case store.ProviderRequesty:
+		if apiBase == "" {
+			apiBase = store.RequestyDefaultAPIBase
+		}
+		return apiBase, store.RequestyDefaultModel
 	default:
 		return apiBase, ""
 	}

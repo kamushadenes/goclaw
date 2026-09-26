@@ -7,6 +7,7 @@ import (
 	"html"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -39,12 +40,12 @@ type MCPOAuthHandler struct {
 
 // MCPOAuthHandlerDeps contains all dependencies for the OAuth handler.
 type MCPOAuthHandlerDeps struct {
-	MCPStore   store.MCPServerStore
-	OAuthStore store.MCPOAuthTokenStore
-	Discoverer *mcpoauth.Discoverer
-	FlowMgr    *mcpoauth.FlowManager
-	Refresher  *mcpoauth.Refresher
-	EventBus   bus.EventPublisher
+	MCPStore    store.MCPServerStore
+	OAuthStore  store.MCPOAuthTokenStore
+	Discoverer  *mcpoauth.Discoverer
+	FlowMgr     *mcpoauth.FlowManager
+	Refresher   *mcpoauth.Refresher
+	EventBus    bus.EventPublisher
 	PublicURL   string
 	Port        int
 	Evictor     MCPPoolEvictor
@@ -54,12 +55,12 @@ type MCPOAuthHandlerDeps struct {
 // NewMCPOAuthHandler creates an MCPOAuthHandler.
 func NewMCPOAuthHandler(deps MCPOAuthHandlerDeps) *MCPOAuthHandler {
 	return &MCPOAuthHandler{
-		mcpStore:   deps.MCPStore,
-		oauthStore: deps.OAuthStore,
-		discoverer: deps.Discoverer,
-		flowMgr:    deps.FlowMgr,
-		refresher:  deps.Refresher,
-		eventBus:   deps.EventBus,
+		mcpStore:    deps.MCPStore,
+		oauthStore:  deps.OAuthStore,
+		discoverer:  deps.Discoverer,
+		flowMgr:     deps.FlowMgr,
+		refresher:   deps.Refresher,
+		eventBus:    deps.EventBus,
 		publicURL:   deps.PublicURL,
 		port:        deps.Port,
 		evictor:     deps.Evictor,
@@ -148,6 +149,23 @@ type startOAuthResp struct {
 	ClientID  string `json:"client_id"`
 	Issuer    string `json:"issuer"`
 	Completed bool   `json:"completed,omitempty"` // true for client_credentials — token already minted, no redirect needed
+}
+
+// dropboxOfflineAuthParam returns the authorization-request parameter Dropbox
+// requires to issue a refresh token. Dropbox's default is an online-only token
+// (expires ~4h, cannot be refreshed), so every Dropbox authorize URL must carry
+// token_access_type=offline for goclaw's auto-refresh to work. Returns nil for
+// every other authorization server — unknown params could break stricter ASes.
+func dropboxOfflineAuthParam(authEndpoint string) url.Values {
+	u, err := url.Parse(authEndpoint)
+	if err != nil {
+		return nil
+	}
+	host := u.Hostname()
+	if host == "www.dropbox.com" || strings.HasSuffix(host, ".dropbox.com") {
+		return url.Values{"token_access_type": {"offline"}}
+	}
+	return nil
 }
 
 // authorizeOAuthScope enforces who may operate on a given OAuth token scope.
@@ -377,6 +395,7 @@ func (h *MCPOAuthHandler) handleStart(w http.ResponseWriter, r *http.Request) {
 		RedirectURI:      callbackURI,
 		Scopes:           scopes,
 		GrantType:        oauthSettings.OAuth.GrantType,
+		ExtraAuthParams:  dropboxOfflineAuthParam(disc.AuthorizationEndpoint),
 	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

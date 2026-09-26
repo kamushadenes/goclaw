@@ -451,7 +451,7 @@ Browser pairing allows web UI clients to authenticate without full admin credent
 |-----------|--------|
 | Pairing code | 8-character alphanumeric code (A-Z, 2-9, excludes I/O/L for clarity), generated via `generatePairingCode()` in `internal/store/pg/pairing.go` |
 | Code TTL | 60 minutes; expired codes are auto-pruned from database |
-| Paired device TTL | 30 days; provides defense-in-depth expiry (paired devices auto-cleaned if unused) |
+| Paired device TTL | 30 days by default; provides defense-in-depth expiry (expired pairings are auto-cleaned). An admin can opt a single pairing out of expiry (`device.pair.approve` with `permanent`, or `device.pair.update`); such a pairing lasts until revoked |
 | Pending limit | Max 3 pending pairing requests per account; prevents spam/enumeration |
 | HTTP access | Paired browsers access HTTP APIs via `X-GoClaw-Sender-Id` header (requires `channel=browser`). Fail-closed: `IsPaired()` check blocks unpaired sessions. Logs failed HTTP pairing auth attempts for security monitoring. |
 | Approval flow | Requires WebSocket `device.pair.approve` method from authenticated admin session, triggered by `pairing.approve` command. Admin approval adds sender to `paired_devices` table with `paired_by` audit field. |
@@ -461,13 +461,19 @@ Browser pairing allows web UI clients to authenticate without full admin credent
 
 ## 12. Delegation Security
 
-Agent delegation is protected through delegation history tracking and concurrency controls.
+Agent delegation is protected through isolated artifact exchange, directional
+link permission checks, and bounded child-run admission.
 
 | Control | Scope | Description |
 |---------|-------|-------------|
-| Per-agent load cap | B (all sources) | `other_config.max_delegation_load` limits total concurrent delegations targeting B |
+| Artifact boundary | One Agent Link run | Staged inputs are read-only; the delegatee writes only to ephemeral outputs that are validated before atomic publish |
+| Per-root limit | One root agent's self-spawn tree | Agent `subagents.maxConcurrent`, default 20 |
+| Process safety cap | All self-spawn and Agent Link callbacks | Standard 32 / Lite 2, with at most 128 independent pending chains |
+| Nested lifetime | Agent Link artifact run | Async descendants are rejected; sync descendants complete before publication |
+| Durable async result | Source/root agent UUID within one tenant | Terminal text and logical media paths use deadline-bounded persistence retries before announcement; single-process startup retries pre-traffic recovery that marks previous-process non-terminal rows failed, and successful terminal writes remain explicitly retrievable by completion UUID |
 
-When concurrency limits are hit, the error message is written for LLM reasoning: *"Agent at capacity (5/5). Try a different agent or handle it yourself."*
+`agent_links.max_concurrent` is retained as compatibility metadata and is not
+currently enforced by runtime admission.
 
 ---
 

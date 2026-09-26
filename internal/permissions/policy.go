@@ -268,6 +268,7 @@ func isAdminMethod(method string) bool {
 		protocol.MethodPairingDeny,
 		protocol.MethodPairingList,
 		protocol.MethodPairingRevoke,
+		protocol.MethodPairingUpdate,
 
 		// Teams — create/delete/update/member management.
 		protocol.MethodTeamsCreate,
@@ -351,6 +352,8 @@ func isWriteMethod(method string) bool {
 		protocol.MethodTeamsTaskComment,
 		protocol.MethodTeamsTaskCreate,
 		protocol.MethodTeamsTaskAssign,
+		protocol.MethodTeamsTaskCancel,
+		protocol.MethodTeamsTaskRetry,
 		protocol.MethodTeamsWorkspaceDelete,
 		protocol.MethodHooksTest,
 		protocol.MethodPairingRequest,

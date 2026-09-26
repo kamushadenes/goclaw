@@ -7,11 +7,13 @@ export interface ProviderTypeInfo {
 
 export const PROVIDER_TYPES: ProviderTypeInfo[] = [
   { value: 'aimlapi', label: 'AI/ML API', apiBase: 'https://api.aimlapi.com/v1', needsKey: true },
+  { value: 'api_route', label: 'API Route', apiBase: 'https://global.api-route.com/v1', needsKey: true },
   { value: 'anthropic_native', label: 'Anthropic (Native)', apiBase: '', needsKey: true },
   { value: 'openai_compat', label: 'OpenAI Compatible', apiBase: '', needsKey: true },
   { value: 'gemini_native', label: 'Google Gemini', apiBase: 'https://generativelanguage.googleapis.com/v1beta/openai', needsKey: true },
   { value: 'vertex', label: 'Google Vertex AI', apiBase: '', needsKey: false },
   { value: 'openrouter', label: 'OpenRouter', apiBase: 'https://openrouter.ai/api/v1', needsKey: true },
+  { value: 'requesty', label: 'Requesty', apiBase: 'https://router.requesty.ai/v1', needsKey: true },
   { value: 'groq', label: 'Groq', apiBase: 'https://api.groq.com/openai/v1', needsKey: true },
   { value: 'deepseek', label: 'DeepSeek', apiBase: 'https://api.deepseek.com/v1', needsKey: true },
   { value: 'mistral', label: 'Mistral AI', apiBase: 'https://api.mistral.ai/v1', needsKey: true },

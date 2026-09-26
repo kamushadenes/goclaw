@@ -76,6 +76,7 @@ type Manager struct {
 	health           map[string]ChannelHealth
 	bus              *bus.MessageBus
 	runs             sync.Map // runID string → *RunContext
+	mediaClaims      sync.Map // temp media path → struct{}, in-flight dispatch claims
 	dispatchTask     *asyncTask
 	mu               sync.RWMutex
 	contactCollector *store.ContactCollector
@@ -168,6 +169,23 @@ func (m *Manager) GetChannel(name string) (Channel, bool) {
 	defer m.mu.RUnlock()
 	channel, ok := m.channels[name]
 	return channel, ok
+}
+
+// ClearGroupApproval removes a chat from a channel's in-memory pairing
+// approval cache (BaseChannel.approvedGroups). Used when a group pairing is
+// revoked so the bot re-enters the pairing gate on the next message instead of
+// continuing to reply as if it were still approved. Channels that don't embed
+// BaseChannel are ignored.
+func (m *Manager) ClearGroupApproval(channelName, chatID string) {
+	m.mu.RLock()
+	ch, ok := m.channels[channelName]
+	m.mu.RUnlock()
+	if !ok {
+		return
+	}
+	if c, ok := ch.(interface{ ClearGroupApproval(string) }); ok {
+		c.ClearGroupApproval(chatID)
+	}
 }
 
 // GetStatus returns the running status of all channels.
