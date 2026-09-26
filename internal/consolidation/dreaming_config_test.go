@@ -18,7 +18,7 @@ func boolPtr(b bool) *bool { return new(b) }
 func TestMergeDreamingConfigNilOverrideReturnsBase(t *testing.T) {
 	base := defaultDreamingConfig()
 	got := mergeDreamingConfig(base, nil)
-	if got != base {
+	if got.Threshold != base.Threshold || got.Debounce != base.Debounce || got.Enabled != base.Enabled || got.VerboseLog != base.VerboseLog || len(got.AllowedUsers) != len(base.AllowedUsers) {
 		t.Fatalf("nil override mutated base: got %+v, want %+v", got, base)
 	}
 }
@@ -86,6 +86,76 @@ func TestMergeDreamingConfigZeroFieldsIgnored(t *testing.T) {
 	}
 	if got.Debounce != base.Debounce {
 		t.Errorf("Debounce = %v, want base %v", got.Debounce, base.Debounce)
+	}
+}
+
+func TestDreamingWorkerAllowedUsersBlocksUntrusted(t *testing.T) {
+	mockEpisodic := &mockEpisodicStore{
+		countResult: 100,
+		promoted:    make(map[string]bool),
+	}
+	worker := &dreamingWorker{
+		episodicStore: mockEpisodic,
+		threshold:     5,
+		debounce:      1 * time.Second,
+		resolveConfig: func(_ context.Context, _ string) *config.DreamingConfig {
+			return &config.DreamingConfig{AllowedUsers: []string{"system", "trusted-user"}}
+		},
+	}
+	err := worker.Handle(context.Background(), eventbus.DomainEvent{
+		Type:     eventbus.EventEpisodicCreated,
+		TenantID: uuid.New().String(),
+		AgentID:  "agent-allowlist",
+		UserID:   "random-stranger",
+		Payload:  &eventbus.EpisodicCreatedPayload{},
+	})
+	if err != nil {
+		t.Fatalf("Handle failed: %v", err)
+	}
+	if len(mockEpisodic.promoted) > 0 {
+		t.Errorf("Expected 0 promotions for untrusted user, got %d", len(mockEpisodic.promoted))
+	}
+	if mockEpisodic.countCalls > 0 {
+		t.Errorf("Expected 0 CountUnpromoted calls for untrusted user, got %d", mockEpisodic.countCalls)
+	}
+}
+
+// TestDreamingWorkerAllowedUsersAllowsTrusted verifies trusted users still
+// consolidate normally when the allowlist is set.
+func TestDreamingWorkerAllowedUsersAllowsTrusted(t *testing.T) {
+	summaries := []store.EpisodicSummary{
+		{ID: uuid.New(), Summary: "s1"},
+		{ID: uuid.New(), Summary: "s2"},
+	}
+	mockEpisodic := &mockEpisodicStore{
+		countResult: 2,
+		unpromoted:  summaries,
+		promoted:    make(map[string]bool),
+	}
+	mockMemory := newMockMemoryStore()
+	mockProvider := &mockProvider{chatResp: &providers.ChatResponse{Content: "ok"}}
+	worker := &dreamingWorker{
+		episodicStore: mockEpisodic,
+		memoryStore:   mockMemory,
+		registry:      testRegistry(mockProvider),
+		threshold:     5,
+		debounce:      1 * time.Second,
+		resolveConfig: func(_ context.Context, _ string) *config.DreamingConfig {
+			return &config.DreamingConfig{Threshold: 2, AllowedUsers: []string{"trusted-user"}}
+		},
+	}
+	err := worker.Handle(context.Background(), eventbus.DomainEvent{
+		Type:     eventbus.EventEpisodicCreated,
+		TenantID: uuid.New().String(),
+		AgentID:  "agent-allow-trusted",
+		UserID:   "trusted-user",
+		Payload:  &eventbus.EpisodicCreatedPayload{},
+	})
+	if err != nil {
+		t.Fatalf("Handle failed: %v", err)
+	}
+	if len(mockEpisodic.promoted) != 2 {
+		t.Errorf("Expected 2 promotions for trusted user, got %d", len(mockEpisodic.promoted))
 	}
 }
 

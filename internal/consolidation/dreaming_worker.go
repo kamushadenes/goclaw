@@ -117,6 +117,22 @@ func (w *dreamingWorker) Handle(ctx context.Context, event eventbus.DomainEvent)
 		return nil
 	}
 
+	// Allowlist: when set, only consolidate memories authored by trusted users
+	// (defense against memory poisoning via untrusted conversation partners).
+	if len(cfg.AllowedUsers) > 0 {
+		trusted := false
+		for _, u := range cfg.AllowedUsers {
+			if userID == u {
+				trusted = true
+				break
+			}
+		}
+		if !trusted {
+			logSkip(cfg.VerboseLog, "dreaming: user not in allowed_users", "agent", agentID, "user", userID)
+			return nil
+		}
+	}
+
 	// Debounce: skip if ran recently for this pair.
 	key := agentID + ":" + userID
 	if v, ok := w.lastRun.Load(key); ok {

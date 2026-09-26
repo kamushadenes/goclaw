@@ -16,6 +16,9 @@ All notable changes to GoClaw are documented here. For full documentation, see [
 
 ### Added
 
+- Agent messages now include a local timestamp so the model doesn't need the
+  `datetime` tool and sees the correct date at night.
+
 - **Task detail dialog shows the full task UUID with one-click copy** — the
   short identifier (`T-015-cc8e`) carries only the last four hex characters of
   the UUID, while the agent-facing `team_tasks` tool and RPCs take the full

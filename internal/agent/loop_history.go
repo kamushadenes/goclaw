@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
@@ -307,13 +308,39 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		l.sessions.Save(ctx, sessionKey)
 	}
 
-	// Current user message
+	// Current user message — prefixed with a local timestamp so the agent
+	// doesn't need to call the datetime tool and the model isn't stuck
+	// inferring the date from a UTC-only container clock at night.
 	messages = append(messages, providers.Message{
 		Role:    "user",
-		Content: userMessage,
+		Content: stampUserMessage(userMessage, l.defaultTimezone),
 	})
 
 	return messages, hadBootstrap
+}
+
+// stampUserMessage prefixes userMessage with a local-time timestamp
+// (format "[2006-01-02 15:04 -07:00] ") so the agent doesn't need to call
+// the datetime tool and to avoid the model reading a UTC-only date at
+// night. Empty messages (bootstrap/flush) pass through untouched.
+func stampUserMessage(userMessage, tz string) string {
+	if userMessage == "" {
+		return userMessage
+	}
+	return timestampPrefix(tz) + userMessage
+}
+
+// timestampPrefix returns a "[2006-01-02 15:04 -07:00] " prefix for the
+// current time in tz (an IANA timezone name, e.g. cron.default_timezone).
+// Falls back to UTC when tz is empty or not a valid location.
+func timestampPrefix(tz string) string {
+	loc := time.UTC
+	if tz != "" {
+		if l, err := time.LoadLocation(tz); err == nil {
+			loc = l
+		}
+	}
+	return time.Now().In(loc).Format("[2006-01-02 15:04 -07:00] ")
 }
 
 // resolveContextFiles merges base context files (from resolver, e.g. auto-generated

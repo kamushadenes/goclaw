@@ -13,10 +13,11 @@ import (
 // inside Handle(). All fields are concrete (no pointers) so the worker can
 // operate without further nil-checks.
 type resolvedDreamingConfig struct {
-	Enabled    bool
-	Debounce   time.Duration
-	Threshold  int
-	VerboseLog bool
+	Enabled      bool
+	Debounce     time.Duration
+	Threshold    int
+	VerboseLog   bool
+	AllowedUsers []string
 }
 
 // defaultDreamingConfig returns hardcoded defaults that match the worker's
@@ -50,6 +51,9 @@ func mergeDreamingConfig(base resolvedDreamingConfig, override *config.DreamingC
 	}
 	if override.VerboseLog != nil {
 		base.VerboseLog = *override.VerboseLog
+	}
+	if len(override.AllowedUsers) > 0 {
+		base.AllowedUsers = override.AllowedUsers
 	}
 	return base
 }

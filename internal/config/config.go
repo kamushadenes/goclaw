@@ -406,6 +406,10 @@ type DreamingConfig struct {
 	DebounceMs int   `json:"debounce_ms,omitempty"` // min interval between runs per agent/user (default 600000 = 10 min)
 	Threshold  int   `json:"threshold,omitempty"`   // min unpromoted entries before running (default 5)
 	VerboseLog *bool `json:"verbose_log,omitempty"` // log debounce/below-threshold skips at info level (default false)
+	// AllowedUsers restricts consolidation to these user IDs only (defense
+	// against memory poisoning from untrusted conversation partners).
+	// Empty/nil = all users (legacy behaviour).
+	AllowedUsers []string `json:"allowed_users,omitempty"`
 }
 
 // SandboxConfig configures Docker-based sandbox execution.
